@@ -12,13 +12,16 @@ use core::fmt;
 
 use serde::{Deserialize, Serialize};
 
-/// The largest exponent we accept. Covers ISO-4217 (max 4) and the
-/// 18-decimal precision common to stablecoins.
-const MAX_EXPONENT: u8 = 18;
+/// The largest exponent [`Currency::new`] accepts. Covers ISO-4217 (max 4)
+/// and the 18-decimal precision common to stablecoins.
+///
+/// Public because a caller validating its own input needs the same bound we
+/// enforce, and having to discover it by trial is a bad API.
+pub const MAX_EXPONENT: u8 = 18;
 
 /// Maximum length of a currency code, in bytes. ISO codes are 3; token
 /// symbols like `USDC` are 4; we allow a little headroom.
-const CODE_CAP: usize = 8;
+pub const CODE_CAP: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum MoneyError {

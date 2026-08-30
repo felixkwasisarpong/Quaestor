@@ -56,8 +56,7 @@ resolves to `Deny` — never to `Allow`.
 | `quaestor-proxy` | ⬜ |
 
 ```bash
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
+./scripts/check.sh   # exactly what CI runs: fmt, clippy, test, doc
 ```
 
 ## Design notes
