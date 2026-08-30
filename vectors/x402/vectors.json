@@ -1,0 +1,306 @@
+{
+  "asset": {
+    "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "decimals": 6,
+    "eip712": {
+      "chainId": 8453,
+      "name": "USD Coin",
+      "version": "2"
+    },
+    "network": "eip155:8453"
+  },
+  "cases": [
+    {
+      "expect": "accept",
+      "name": "valid",
+      "nowSeconds": 1772000300,
+      "payload": {
+        "accepted": {
+          "amount": "10000",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "extra": {
+            "name": "USD Coin",
+            "version": "2"
+          },
+          "maxTimeoutSeconds": 60,
+          "network": "eip155:8453",
+          "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+          "scheme": "exact"
+        },
+        "payload": {
+          "authorization": {
+            "from": "0xdb00079cad3e665853bf766efe26f4c38cdbdcda",
+            "nonce": "0x7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+            "to": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "validAfter": "1772000000",
+            "validBefore": "1772000600",
+            "value": "10000"
+          },
+          "signature": "0x5a48fc67a7df9fc9918719789905fe2afc7bda9cbd26169b5dd1f2ed2803624606be3171210793797d8ba354ee947b1c2bd97047f13e5a202350c1e52b858b6e1c"
+        },
+        "x402Version": 2
+      }
+    },
+    {
+      "expect": "reject:recipient_mismatch",
+      "name": "recipient_redirected",
+      "nowSeconds": 1772000300,
+      "payload": {
+        "accepted": {
+          "amount": "10000",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "extra": {
+            "name": "USD Coin",
+            "version": "2"
+          },
+          "maxTimeoutSeconds": 60,
+          "network": "eip155:8453",
+          "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+          "scheme": "exact"
+        },
+        "payload": {
+          "authorization": {
+            "from": "0xdb00079cad3e665853bf766efe26f4c38cdbdcda",
+            "nonce": "0x7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+            "to": "0xdeadBEEFdeadbeefDEADbeefdeadBEEFdeadBEEF",
+            "validAfter": "1772000000",
+            "validBefore": "1772000600",
+            "value": "10000"
+          },
+          "signature": "0x5a48fc67a7df9fc9918719789905fe2afc7bda9cbd26169b5dd1f2ed2803624606be3171210793797d8ba354ee947b1c2bd97047f13e5a202350c1e52b858b6e1c"
+        },
+        "x402Version": 2
+      }
+    },
+    {
+      "expect": "reject:amount_mismatch",
+      "name": "amount_inflated",
+      "nowSeconds": 1772000300,
+      "payload": {
+        "accepted": {
+          "amount": "10000",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "extra": {
+            "name": "USD Coin",
+            "version": "2"
+          },
+          "maxTimeoutSeconds": 60,
+          "network": "eip155:8453",
+          "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+          "scheme": "exact"
+        },
+        "payload": {
+          "authorization": {
+            "from": "0xdb00079cad3e665853bf766efe26f4c38cdbdcda",
+            "nonce": "0x7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+            "to": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "validAfter": "1772000000",
+            "validBefore": "1772000600",
+            "value": "99999999"
+          },
+          "signature": "0x5a48fc67a7df9fc9918719789905fe2afc7bda9cbd26169b5dd1f2ed2803624606be3171210793797d8ba354ee947b1c2bd97047f13e5a202350c1e52b858b6e1c"
+        },
+        "x402Version": 2
+      }
+    },
+    {
+      "expect": "reject:signer_mismatch",
+      "name": "nonce_tampered",
+      "nowSeconds": 1772000300,
+      "payload": {
+        "accepted": {
+          "amount": "10000",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "extra": {
+            "name": "USD Coin",
+            "version": "2"
+          },
+          "maxTimeoutSeconds": 60,
+          "network": "eip155:8453",
+          "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+          "scheme": "exact"
+        },
+        "payload": {
+          "authorization": {
+            "from": "0xdb00079cad3e665853bf766efe26f4c38cdbdcda",
+            "nonce": "0x0101010101010101010101010101010101010101010101010101010101010101",
+            "to": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "validAfter": "1772000000",
+            "validBefore": "1772000600",
+            "value": "10000"
+          },
+          "signature": "0x5a48fc67a7df9fc9918719789905fe2afc7bda9cbd26169b5dd1f2ed2803624606be3171210793797d8ba354ee947b1c2bd97047f13e5a202350c1e52b858b6e1c"
+        },
+        "x402Version": 2
+      }
+    },
+    {
+      "expect": "reject:signer_mismatch",
+      "name": "payer_spoofed",
+      "nowSeconds": 1772000300,
+      "payload": {
+        "accepted": {
+          "amount": "10000",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "extra": {
+            "name": "USD Coin",
+            "version": "2"
+          },
+          "maxTimeoutSeconds": 60,
+          "network": "eip155:8453",
+          "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+          "scheme": "exact"
+        },
+        "payload": {
+          "authorization": {
+            "from": "0x1111111111111111111111111111111111111111",
+            "nonce": "0x7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+            "to": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "validAfter": "1772000000",
+            "validBefore": "1772000600",
+            "value": "10000"
+          },
+          "signature": "0x5a48fc67a7df9fc9918719789905fe2afc7bda9cbd26169b5dd1f2ed2803624606be3171210793797d8ba354ee947b1c2bd97047f13e5a202350c1e52b858b6e1c"
+        },
+        "x402Version": 2
+      }
+    },
+    {
+      "expect": "reject:expired",
+      "name": "expired",
+      "nowSeconds": 1772000601,
+      "payload": {
+        "accepted": {
+          "amount": "10000",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "extra": {
+            "name": "USD Coin",
+            "version": "2"
+          },
+          "maxTimeoutSeconds": 60,
+          "network": "eip155:8453",
+          "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+          "scheme": "exact"
+        },
+        "payload": {
+          "authorization": {
+            "from": "0xdb00079cad3e665853bf766efe26f4c38cdbdcda",
+            "nonce": "0x7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+            "to": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "validAfter": "1772000000",
+            "validBefore": "1772000600",
+            "value": "10000"
+          },
+          "signature": "0x5a48fc67a7df9fc9918719789905fe2afc7bda9cbd26169b5dd1f2ed2803624606be3171210793797d8ba354ee947b1c2bd97047f13e5a202350c1e52b858b6e1c"
+        },
+        "x402Version": 2
+      }
+    },
+    {
+      "expect": "reject:not_yet_valid",
+      "name": "not_yet_valid",
+      "nowSeconds": 1771999999,
+      "payload": {
+        "accepted": {
+          "amount": "10000",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "extra": {
+            "name": "USD Coin",
+            "version": "2"
+          },
+          "maxTimeoutSeconds": 60,
+          "network": "eip155:8453",
+          "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+          "scheme": "exact"
+        },
+        "payload": {
+          "authorization": {
+            "from": "0xdb00079cad3e665853bf766efe26f4c38cdbdcda",
+            "nonce": "0x7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+            "to": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "validAfter": "1772000000",
+            "validBefore": "1772000600",
+            "value": "10000"
+          },
+          "signature": "0x5a48fc67a7df9fc9918719789905fe2afc7bda9cbd26169b5dd1f2ed2803624606be3171210793797d8ba354ee947b1c2bd97047f13e5a202350c1e52b858b6e1c"
+        },
+        "x402Version": 2
+      }
+    },
+    {
+      "expect": "accept",
+      "name": "window_boundary_start",
+      "nowSeconds": 1772000000,
+      "payload": {
+        "accepted": {
+          "amount": "10000",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "extra": {
+            "name": "USD Coin",
+            "version": "2"
+          },
+          "maxTimeoutSeconds": 60,
+          "network": "eip155:8453",
+          "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+          "scheme": "exact"
+        },
+        "payload": {
+          "authorization": {
+            "from": "0xdb00079cad3e665853bf766efe26f4c38cdbdcda",
+            "nonce": "0x7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+            "to": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "validAfter": "1772000000",
+            "validBefore": "1772000600",
+            "value": "10000"
+          },
+          "signature": "0x5a48fc67a7df9fc9918719789905fe2afc7bda9cbd26169b5dd1f2ed2803624606be3171210793797d8ba354ee947b1c2bd97047f13e5a202350c1e52b858b6e1c"
+        },
+        "x402Version": 2
+      }
+    },
+    {
+      "expect": "accept",
+      "name": "window_boundary_end",
+      "nowSeconds": 1772000600,
+      "payload": {
+        "accepted": {
+          "amount": "10000",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "extra": {
+            "name": "USD Coin",
+            "version": "2"
+          },
+          "maxTimeoutSeconds": 60,
+          "network": "eip155:8453",
+          "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+          "scheme": "exact"
+        },
+        "payload": {
+          "authorization": {
+            "from": "0xdb00079cad3e665853bf766efe26f4c38cdbdcda",
+            "nonce": "0x7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+            "to": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "validAfter": "1772000000",
+            "validBefore": "1772000600",
+            "value": "10000"
+          },
+          "signature": "0x5a48fc67a7df9fc9918719789905fe2afc7bda9cbd26169b5dd1f2ed2803624606be3171210793797d8ba354ee947b1c2bd97047f13e5a202350c1e52b858b6e1c"
+        },
+        "x402Version": 2
+      }
+    }
+  ],
+  "description": "x402 v2 exact-scheme conformance vectors. Every implementation must agree.",
+  "requirements": {
+    "amount": "10000",
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "extra": {
+      "name": "USD Coin",
+      "version": "2"
+    },
+    "maxTimeoutSeconds": 60,
+    "network": "eip155:8453",
+    "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+    "scheme": "exact"
+  }
+}

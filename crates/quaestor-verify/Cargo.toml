@@ -1,0 +1,25 @@
+[package]
+name = "quaestor-verify"
+description = "Mandate and payment-authorization verification for Quaestor."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+quaestor-core = { path = "../quaestor-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+sha3 = { version = "0.10", default-features = false, features = ["std"] }
+subtle = "2.6"
+
+[dev-dependencies]
+k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+serde_json = { workspace = true }

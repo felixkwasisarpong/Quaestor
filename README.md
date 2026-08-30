@@ -50,7 +50,7 @@ resolves to `Deny` — never to `Allow`.
 | Crate | Status |
 |---|---|
 | `quaestor-core` | ✅ `Money`, `PaymentIntent`, `Verdict`, typed ids |
-| `quaestor-verify` | ⬜ next |
+| `quaestor-verify` | ✅ x402 v2 `exact` on EVM — EIP-712/EIP-3009, binding checks, replay guard |
 | `quaestor-policy` | ⬜ |
 | `quaestor-receipt` | ⬜ |
 | `quaestor-proxy` | ⬜ |
@@ -73,6 +73,12 @@ USDC units as 1,000,000 cents, and authorizing ten thousand dollars.
 parsers, JavaScript's included, so anything above 2^53 minor units silently
 loses precision in transit — about nine billion dollars at USDC's six
 decimals. A decimal string costs nothing and removes the failure mode.
+
+**A signature is not an authorization.** It proves a key holder signed one
+digest — not that the payment goes where the merchant asked. Change the `to`
+address on a genuine x402 authorization and the signature over *that* is
+still valid. The binding checks are what make it mean something, and they run
+before signature recovery. See [`BUGS.md`](BUGS.md) #003.
 
 [`PRINCIPLES.md`](PRINCIPLES.md) covers the rest, including why the policy
 evaluator may not read the clock.
