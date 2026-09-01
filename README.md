@@ -50,7 +50,7 @@ resolves to `Deny` — never to `Allow`.
 | Crate | Status |
 |---|---|
 | `quaestor-core` | ✅ `Money`, `PaymentIntent`, `Verdict`, typed ids |
-| `quaestor-verify` | ✅ x402 v2 `exact` on EVM — EIP-712/EIP-3009, binding checks, replay guard |
+| `quaestor-verify` | ✅ x402 v2 `exact` on EVM; delegation chains with monotonic attenuation |
 | `quaestor-policy` | ⬜ |
 | `quaestor-receipt` | ⬜ |
 | `quaestor-proxy` | ⬜ |
@@ -72,6 +72,13 @@ USDC units as 1,000,000 cents, and authorizing ten thousand dollars.
 parsers, JavaScript's included, so anything above 2^53 minor units silently
 loses precision in transit — about nine billion dollars at USDC's six
 decimals. A decimal string costs nothing and removes the failure mode.
+
+**Delegated authority can only ever shrink.** A sub-agent holding a genuine
+$100 delegation cannot issue itself one for $500 — and, less obviously,
+cannot issue itself one that simply *drops* the payee restriction. A naive
+subset check on the listed payees sees an empty diff and lets that through
+with unlimited reach. `Constraint::Any` is strictly wider than any
+`Constraint::Only`, and the rules are asymmetric on purpose.
 
 **A signature is not an authorization.** It proves a key holder signed one
 digest — not that the payment goes where the merchant asked. Change the `to`

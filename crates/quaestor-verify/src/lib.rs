@@ -19,6 +19,7 @@
 
 pub mod eip712;
 pub mod error;
+pub mod mandate;
 pub mod x402;
 
 pub use error::VerifyError;

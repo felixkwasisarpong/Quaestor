@@ -15,7 +15,11 @@ use crate::money::Money;
 
 /// Which rail the money would actually move over. Layers above L0 use this
 /// for policy ("never pay over an on-chain rail") and for nothing else.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// `Ord` is derived so a set of rails has a stable iteration order. That
+/// matters more than it looks: constraint sets are serialized into the bytes
+/// a mandate signature covers, and an unstable order would make an identical
+/// grant produce a different signature on every run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Rail {
     X402,

@@ -19,7 +19,9 @@ thiserror = { workspace = true }
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 sha3 = { version = "0.10", default-features = false, features = ["std"] }
 subtle = "2.6"
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core"] }
 
 [dev-dependencies]
+rand_core = { version = "0.6", features = ["getrandom"] }
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 serde_json = { workspace = true }

@@ -110,6 +110,50 @@ then refused as a replay.
 
 ---
 
+## 006 — Dropping a restriction reads as narrowing
+
+**Day 4. Found by:** writing the attenuation rules down as a table before
+implementing them.
+
+Not a bug that shipped. A bug the obvious implementation has.
+
+Delegated authority must only ever shrink. The tempting way to check that is
+to compare the listed values — parent allows three payees, child allows two,
+two is a subset of three, fine. But "no payee restriction" and "these three
+payees" are both representable, and a child that *removes* the restriction
+produces an empty diff under that comparison. It reads as narrower and gains
+the whole world.
+
+**Fix:** `Constraint::Any` is strictly wider than any `Constraint::Only`,
+including one listing everything currently known — "everything known today"
+and "whatever exists tomorrow" are different grants. The subset relation is
+asymmetric: `Only(_) ⊆ Any` holds, `Any ⊆ Only(_)` does not.
+
+Covered by `dropping_the_payee_restriction_entirely_is_caught`.
+
+---
+
+## 007 — Concatenated fields let an attacker move a boundary
+
+**Day 4. Found by:** deciding what bytes a mandate signature covers.
+
+If signed bytes are field values concatenated, `("ab", "c")` and
+`("a", "bc")` produce identical input. An attacker who can influence two
+adjacent fields can shift characters between them and keep the signature
+valid — moving authority from one field to another without breaking
+anything.
+
+**Fix:** every field is length-prefixed, and the encoding opens with a
+domain tag (`quaestor.mandate.v1`) so a mandate signature cannot be
+presented as a signature over some other structure. Constraint sets use
+`BTreeSet`, so iteration order is stable and the same grant signs identically
+every time.
+
+Covered by `signing_bytes_cannot_be_confused_by_shifting_a_field_boundary`
+and `constraint_sets_serialize_in_a_stable_order`.
+
+---
+
 ## Open questions
 
 - `NonceStore::check_and_record` is documented as needing to be atomic. The
