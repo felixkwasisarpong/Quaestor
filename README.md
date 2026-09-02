@@ -50,7 +50,7 @@ resolves to `Deny` — never to `Allow`.
 | Crate | Status |
 |---|---|
 | `quaestor-core` | ✅ `Money`, `PaymentIntent`, `Verdict`, typed ids |
-| `quaestor-verify` | ✅ x402 v2 `exact` on EVM; delegation chains with monotonic attenuation |
+| `quaestor-verify` | ✅ x402 v2 `exact` on EVM; delegation chains with monotonic attenuation; AP2 scope mapping |
 | `quaestor-policy` | ⬜ |
 | `quaestor-receipt` | ⬜ |
 | `quaestor-proxy` | ⬜ |

@@ -154,6 +154,55 @@ and `constraint_sets_serialize_in_a_stable_order`.
 
 ---
 
+## 008 — AP2 Intent Mandates have no specified spend ceiling
+
+**Day 6. Found by:** trying to map the spec's constraint list onto a scope
+and finding nothing to put in the amount field.
+
+AP2 lists an Intent Mandate's constraints as product categories, authorized
+payment methods, and a time-to-live. There is no specified cap on amount.
+
+Categories and an expiry without a ceiling is not a bounded delegation. It
+is "spend whatever you like on shoes until Friday".
+
+**Fix:** the mapping requires the ceiling to be supplied locally and refuses
+to build a scope without one. Quaestor will not manufacture an upper bound
+the user never agreed to, and does not treat the absence of one as
+permission.
+
+**Still open upstream.** Worth an issue on the AP2 repository.
+
+---
+
+## 009 — AP2's core mandates cannot currently be verified by anyone
+
+**Day 6. Found by:** trying to implement the verifier the plan called for.
+
+The published specification does not give:
+
+- a JSON schema for `IntentMandate`, only a prose field list;
+- a signing algorithm for either core mandate — the only concrete hint
+  anywhere is an `ES256K` JWS header on a *PaymentMandate*, a different
+  object;
+- a canonical byte encoding, so even with an algorithm two implementations
+  would disagree on what was signed;
+- a named field linking a Cart Mandate back to the Intent Mandate that
+  authorized it.
+
+You cannot write a conformance-tested verifier for a signature whose
+algorithm, canonical bytes and key discovery are all unspecified.
+
+**Decision:** `verify_intent_mandate` returns
+`SignatureSchemeUnspecified` rather than returning `Ok` without checking
+anything. The scope mapping ships separately so it is useful now, and every
+caller is already handling the error — so when the spec settles, the
+implementation lands behind an unchanged signature.
+
+A function named `verify` that returns success without verifying is worse
+than no function at all. Someone builds on it.
+
+---
+
 ## Open questions
 
 - `NonceStore::check_and_record` is documented as needing to be atomic. The

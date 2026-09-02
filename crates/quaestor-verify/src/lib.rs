@@ -17,6 +17,7 @@
     )
 )]
 
+pub mod ap2;
 pub mod eip712;
 pub mod error;
 pub mod mandate;
