@@ -1,0 +1,23 @@
+[package]
+name = "quaestor-policy"
+description = "Deterministic spend policy evaluation. No clock, no network, no LLM."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+quaestor-core = { path = "../quaestor-core" }
+quaestor-verify = { path = "../quaestor-verify" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+toml = "0.8"
+sha3 = { version = "0.10", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }

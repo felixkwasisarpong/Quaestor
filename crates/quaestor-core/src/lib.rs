@@ -35,5 +35,5 @@ pub mod verdict;
 
 pub use ids::{AgentId, IdError, IdempotencyKey, IntentId, PayeeId, PrincipalId};
 pub use intent::{CallContext, Payee, PaymentIntent, Rail, Timestamp};
-pub use money::{Currency, CurrencyError, Money, MoneyError};
+pub use money::{Currency, CurrencyError, Money, MoneyError, ParseMoneyError};
 pub use verdict::{Approver, DenyReason, EscalationReason, Hold, Verdict};

@@ -203,6 +203,22 @@ than no function at all. Someone builds on it.
 
 ---
 
+## 010 — `all()` on an empty iterator is true
+
+**Day 7. Found by:** a table of malformed inputs, one of which was `"5. USD"`.
+
+The amount parser split on `.`, then checked that both halves were digits.
+For `"5."` the fractional half is the empty string, `"".bytes().all(..)` is
+vacuously true, and the amount parsed as five whole units.
+
+Small, and the kind of thing that survives review because the code reads
+correctly. It is only visible if you write down the malformed inputs
+deliberately rather than testing the shapes you expect.
+
+**Fix:** a present-but-empty fractional part is refused outright.
+
+---
+
 ## Open questions
 
 - `NonceStore::check_and_record` is documented as needing to be atomic. The

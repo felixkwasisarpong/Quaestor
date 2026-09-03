@@ -33,6 +33,20 @@ pub enum MoneyError {
     Negative,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ParseMoneyError {
+    #[error("no currency code: expected something like \"500.00 USD\"")]
+    NoCurrency,
+    #[error("currency is {found}, but {expected} was expected")]
+    CurrencyMismatch { found: String, expected: String },
+    #[error("{0:?} is not a decimal amount")]
+    NotANumber(String),
+    #[error("{found} decimal places given, but this currency allows {allowed}")]
+    TooManyDecimals { found: usize, allowed: usize },
+    #[error("amount is out of range")]
+    OutOfRange,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CurrencyError {
     #[error("currency code must be 1..={CODE_CAP} ASCII alphanumeric bytes")]
@@ -304,6 +318,78 @@ impl Money {
         Ok(self.try_cmp(other)? == core::cmp::Ordering::Greater)
     }
 
+    /// Parse `"500.00 USD"` into minor units.
+    ///
+    /// Written for policy files, which people edit by hand. Three rules make
+    /// it safe to put on that boundary:
+    ///
+    /// - the currency decides how many decimals are legal, so `"1.005 USD"`
+    ///   is refused rather than rounded. Silent rounding in a spend limit is
+    ///   how a cap ends up being a cent different from what someone wrote.
+    /// - there is no float anywhere in the conversion. The fractional part is
+    ///   parsed as its own integer and scaled.
+    /// - a missing fractional part is padded, so `"5 USD"` is 500 cents, not 5.
+    pub fn parse(s: &str, currency: Currency) -> Result<Money, ParseMoneyError> {
+        let text = s.trim();
+        let (amount, code) = text
+            .rsplit_once(char::is_whitespace)
+            .ok_or(ParseMoneyError::NoCurrency)?;
+        let code = code.trim();
+        if !code.eq_ignore_ascii_case(currency.code()) {
+            return Err(ParseMoneyError::CurrencyMismatch {
+                found: code.to_owned(),
+                expected: currency.code().to_owned(),
+            });
+        }
+
+        let amount = amount.trim();
+        let (negative, digits) = match amount.strip_prefix('-') {
+            Some(rest) => (true, rest),
+            None => (false, amount),
+        };
+
+        // A present-but-empty fractional part is malformed, not zero.
+        // `"".bytes().all(is_digit)` is vacuously true, so the digit check
+        // below would wave `"5."` through as five whole units.
+        let (whole, frac) = match digits.split_once('.') {
+            Some((_, "")) => return Err(ParseMoneyError::NotANumber(amount.to_owned())),
+            Some((w, f)) => (w, f),
+            None => (digits, ""),
+        };
+        if whole.is_empty() || !whole.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(ParseMoneyError::NotANumber(amount.to_owned()));
+        }
+        if !frac.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(ParseMoneyError::NotANumber(amount.to_owned()));
+        }
+
+        let exponent = usize::from(currency.exponent());
+        if frac.len() > exponent {
+            return Err(ParseMoneyError::TooManyDecimals {
+                found: frac.len(),
+                allowed: exponent,
+            });
+        }
+
+        let whole: i128 = whole.parse().map_err(|_| ParseMoneyError::OutOfRange)?;
+        let scale = currency.scale().map_err(|_| ParseMoneyError::OutOfRange)?;
+        let mut minor = whole
+            .checked_mul(scale)
+            .ok_or(ParseMoneyError::OutOfRange)?;
+
+        if !frac.is_empty() {
+            let mut f: i128 = frac.parse().map_err(|_| ParseMoneyError::OutOfRange)?;
+            for _ in frac.len()..exponent {
+                f = f.checked_mul(10).ok_or(ParseMoneyError::OutOfRange)?;
+            }
+            minor = minor.checked_add(f).ok_or(ParseMoneyError::OutOfRange)?;
+        }
+        if negative {
+            minor = minor.checked_neg().ok_or(ParseMoneyError::OutOfRange)?;
+        }
+        Ok(Money { minor, currency })
+    }
+
     /// Reject a negative amount. Use at trust boundaries — a payment intent
     /// for minus twenty dollars is an attack, not a refund.
     pub fn require_non_negative(&self) -> Result<Money, MoneyError> {
@@ -390,6 +476,76 @@ mod tests {
             .require_non_negative()
             .is_err());
         assert!(Money::new(0, Currency::USD).require_non_negative().is_ok());
+    }
+
+    #[test]
+    fn parsing_a_written_amount_gives_exact_minor_units() {
+        let p = |s| Money::parse(s, Currency::USD).expect("valid");
+        assert_eq!(p("500.00 USD").minor(), 50_000);
+        assert_eq!(
+            p("5 USD").minor(),
+            500,
+            "a bare whole number is major units"
+        );
+        assert_eq!(p("0.05 USD").minor(), 5);
+        assert_eq!(
+            p("0.5 USD").minor(),
+            50,
+            "one decimal place is tenths, not hundredths"
+        );
+        assert_eq!(p("-12.34 USD").minor(), -1_234);
+        assert_eq!(p("  500.00   usd  ").minor(), 50_000, "whitespace and case");
+    }
+
+    #[test]
+    fn too_many_decimals_is_refused_rather_than_rounded() {
+        // Silent rounding in a spend limit means the cap is a cent away from
+        // what someone wrote in a file, and nobody ever finds out.
+        assert!(matches!(
+            Money::parse("1.005 USD", Currency::USD),
+            Err(ParseMoneyError::TooManyDecimals {
+                found: 3,
+                allowed: 2
+            })
+        ));
+        assert!(Money::parse("1.000000 USDC", Currency::USDC).is_ok());
+        assert!(
+            Money::parse("1.5 JPY", Currency::JPY).is_err(),
+            "JPY has no minor unit"
+        );
+    }
+
+    #[test]
+    fn a_mismatched_currency_is_refused_not_reinterpreted() {
+        assert!(matches!(
+            Money::parse("500.00 EUR", Currency::USD),
+            Err(ParseMoneyError::CurrencyMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn malformed_amounts_are_refused() {
+        for bad in [
+            "500.00", "USD", "", "abc USD", "1e3 USD", "0x10 USD", "1..2 USD", "+5 USD", ". USD",
+            "5. USD",
+        ] {
+            assert!(
+                Money::parse(bad, Currency::USD).is_err(),
+                "should refuse {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parsing_round_trips_through_display() {
+        for s in ["500.00 USD", "0.05 USD", "-12.34 USD"] {
+            let m = Money::parse(s, Currency::USD).expect("valid");
+            assert_eq!(m.to_string(), s, "display must be re-parseable");
+            assert_eq!(
+                Money::parse(&m.to_string(), Currency::USD).expect("valid"),
+                m
+            );
+        }
     }
 
     #[test]
