@@ -20,6 +20,10 @@
     )
 )]
 
+pub mod evaluate;
 pub mod rules;
+pub mod state;
 
+pub use evaluate::{evaluate, Request};
 pub use rules::{parse_duration_ms, Budget, Policy, PolicyError, Velocity, POLICY_VERSION};
+pub use state::SpendSnapshot;

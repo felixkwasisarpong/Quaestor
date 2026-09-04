@@ -15,6 +15,8 @@
 //! unattended_limit  = "50.00 USD"
 //! escalate_first_seen_payee = true
 //! escalate_above_remaining_percent = 50
+//! hold_ttl = "5m"
+//! approval_ttl = "15m"
 //!
 //! [[budgets]]
 //! window = "24h"
@@ -93,6 +95,14 @@ pub struct Policy {
     /// carving out an exception at the edge: a policy file about money should
     /// not contain a float at all, and `50` reads better than `0.5` anyway.
     pub escalate_above_remaining_percent: Option<u32>,
+    /// How long an approved payment's hold survives before it is released.
+    ///
+    /// A hold that never expires means one crashed agent silently freezes a
+    /// budget until somebody notices, which is usually the month after.
+    pub hold_ttl_ms: i64,
+    /// How long an escalation waits for a human before it resolves to a
+    /// denial. Never to an allow.
+    pub approval_ttl_ms: i64,
     pub budgets: Vec<Budget>,
     pub velocity: Option<Velocity>,
     pub deny_payees: Vec<String>,
@@ -137,6 +147,10 @@ impl Policy {
 
         let unattended_limit = money("defaults.unattended_limit", &raw.defaults.unattended_limit)?;
 
+        let hold_ttl_ms = parse_duration_ms(raw.defaults.hold_ttl.as_deref().unwrap_or("5m"))?;
+        let approval_ttl_ms =
+            parse_duration_ms(raw.defaults.approval_ttl.as_deref().unwrap_or("15m"))?;
+
         let escalate_above_remaining_percent = match raw.defaults.escalate_above_remaining_percent {
             None => None,
             Some(p) if p <= 100 => Some(p),
@@ -173,6 +187,8 @@ impl Policy {
             unattended_limit,
             escalate_first_seen_payee: raw.defaults.escalate_first_seen_payee,
             escalate_above_remaining_percent,
+            hold_ttl_ms,
+            approval_ttl_ms,
             budgets,
             velocity,
             deny_payees: raw.payees.deny,
@@ -244,6 +260,10 @@ struct RawDefaults {
     escalate_first_seen_payee: bool,
     #[serde(default)]
     escalate_above_remaining_percent: Option<u32>,
+    #[serde(default)]
+    hold_ttl: Option<String>,
+    #[serde(default)]
+    approval_ttl: Option<String>,
 }
 
 #[derive(Deserialize)]

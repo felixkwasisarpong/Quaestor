@@ -41,6 +41,14 @@ pub enum DenyReason {
     },
     /// The payee is explicitly forbidden.
     PayeeBlocked,
+    /// The merchant category is explicitly forbidden.
+    CategoryBlocked { category: String },
+    /// A rule could not be evaluated because the state it needs was not
+    /// available.
+    ///
+    /// This is a denial, not a pass. A budget we cannot read is a budget we
+    /// cannot honour, and the safe answer to "I don't know" is no.
+    StateUnavailable { detail: String },
     /// The rail is not permitted for this principal.
     RailNotPermitted,
     /// A human was asked and said no.

@@ -219,6 +219,26 @@ deliberately rather than testing the shapes you expect.
 
 ---
 
+## 011 — An absent spend figure would have read as zero
+
+**Day 8. Found by:** deciding what the evaluator does with a window the
+snapshot has no entry for.
+
+The obvious `unwrap_or(zero)` is wrong in the most expensive direction
+available. It means every database hiccup hands the agent a completely fresh
+budget, and the failure is invisible: the payment is allowed, no error is
+raised, and the only trace is a spend figure that never matched reality.
+
+**Fix:** a missing figure is `DenyReason::StateUnavailable`. A budget we
+cannot read is a budget we cannot honour, and the safe answer to "I do not
+know" is no. Same for a missing velocity count.
+
+The general shape is worth naming, because it recurs: **absent data must
+never take the permissive default.** It already bit once as `Constraint::Any`
+versus an empty set (006), and it will come up again in the ledger.
+
+---
+
 ## Open questions
 
 - `NonceStore::check_and_record` is documented as needing to be atomic. The
