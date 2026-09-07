@@ -239,6 +239,49 @@ versus an empty set (006), and it will come up again in the ledger.
 
 ---
 
+## 012 — A concurrency test that passed while the bug was present
+
+**Day 12. Found by:** deliberately removing the lock to check the test would
+notice.
+
+The gate was a two-agent race: £5.00 left, two agents each asking for £5.00
+at the same instant, exactly one may win. With `FOR UPDATE` deleted from the
+reservation path, that test **passed three runs out of three.**
+
+A two-way race is simply not reliable evidence. The window between reading
+the budget and writing the hold is small, and two threads miss each other far
+more often than they collide. The test was not wrong, it was underpowered,
+and it would have sat in the suite reading like proof.
+
+The 40-agent version did catch it, every time: 38, 35 and 34 winners against
+a budget of 30. Four to eight units of real overspend per run.
+
+**Fix:** the two-agent case now runs 30 rounds against fresh principals. What
+matters more is the habit — **a concurrency test is not evidence until you
+have watched it fail.** Break the thing it guards, confirm it goes red, put
+it back.
+
+---
+
+## 013 — Notes from wiring up Postgres
+
+Three smaller things, kept together because they are the same lesson about
+trusting an interface you have not exercised.
+
+`SELECT state` on an enum column deserialized into `String` fails at runtime,
+not compile time. `state::text` fixes it.
+
+`$1::hold_state` makes the driver infer the parameter as the enum type and
+refuse a `&str`. `$1::text::hold_state` binds a string and lets Postgres do
+the conversion.
+
+`Store` needed a hand-written `Debug` rather than a derived one. The
+connection can carry credentials, and a struct that prints its own connection
+string into a log line is a credential leak with a stack trace attached. The
+workspace's `missing_debug_implementations` lint is what raised it.
+
+---
+
 ## Open questions
 
 - `NonceStore::check_and_record` is documented as needing to be atomic. The
@@ -248,3 +291,9 @@ versus an empty set (006), and it will come up again in the ledger.
 - Signature malleability is currently handled by `k256` rejecting high-S
   values. That is a dependency's behaviour, not our test. It deserves an
   explicit case.
+- The holds schema records a currency code but not its exponent, and
+  `currency_exponent` maps codes to decimals in Rust. The exponent is part of
+  a currency's identity everywhere else in this system, so storing only half
+  of it is a gap. It should be a column.
+- `NonceStore::check_and_record` is now the only remaining place with a
+  read-then-write shape. The holds path shows what the fix looks like.

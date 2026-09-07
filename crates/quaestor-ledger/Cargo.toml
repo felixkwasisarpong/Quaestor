@@ -1,0 +1,20 @@
+[package]
+name = "quaestor-ledger"
+description = "Budget holds with concurrency-safe reservation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+quaestor-core = { path = "../quaestor-core" }
+quaestor-policy = { path = "../quaestor-policy" }
+thiserror = { workspace = true }
+postgres = "0.19"
+
+[dev-dependencies]

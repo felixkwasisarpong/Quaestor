@@ -52,11 +52,18 @@ resolves to `Deny` — never to `Allow`.
 | `quaestor-core` | ✅ `Money`, `PaymentIntent`, `Verdict`, typed ids |
 | `quaestor-verify` | ✅ x402 v2 `exact` on EVM; delegation chains with monotonic attenuation; AP2 scope mapping |
 | `quaestor-policy` | ✅ rule schema and deterministic evaluator; three verdicts |
+| `quaestor-ledger` | ✅ budget holds, concurrency-safe under real contention |
 | `quaestor-receipt` | ⬜ |
 | `quaestor-proxy` | ⬜ |
 
 ```bash
 ./scripts/check.sh   # exactly what CI runs: fmt, clippy, test, doc
+
+# The ledger's concurrency tests need a real Postgres. Without this they
+# skip rather than fail, because a green suite that proved nothing is worse
+# than a red one.
+QUAESTOR_TEST_PG="host=/tmp/pgsock port=5433 user=quaestor dbname=quaestor_test" \
+  cargo test -p quaestor-ledger
 ```
 
 ## Design notes
@@ -79,6 +86,14 @@ cannot issue itself one that simply *drops* the payee restriction. A naive
 subset check on the listed payees sees an empty diff and lets that through
 with unlimited reach. `Constraint::Any` is strictly wider than any
 `Constraint::Only`, and the rules are asymmetric on purpose.
+
+**Two agents cannot both win the last dollar.** A budget is an aggregate over
+a time range, so the rows two racing transactions conflict over are the ones
+they are each about to write, which is a phantom `READ COMMITTED` does not
+prevent. Reservation takes a per-principal row lock and does the read, the
+decision and the write inside it. Verified by deleting the lock and watching
+a 30-unit budget overspend by 4 to 8 units per run. See [`BUGS.md`](BUGS.md)
+#012.
 
 **A signature is not an authorization.** It proves a key holder signed one
 digest — not that the payment goes where the merchant asked. Change the `to`
