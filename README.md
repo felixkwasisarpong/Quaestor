@@ -53,7 +53,7 @@ resolves to `Deny` — never to `Allow`.
 | `quaestor-verify` | ✅ x402 v2 `exact` on EVM; delegation chains with monotonic attenuation; AP2 scope mapping |
 | `quaestor-policy` | ✅ rule schema and deterministic evaluator; three verdicts |
 | `quaestor-ledger` | ✅ budget holds, concurrency-safe under real contention |
-| `quaestor-receipt` | ⬜ |
+| `quaestor-receipt` | ✅ signed, hash-chained receipts + offline verifier CLI |
 | `quaestor-proxy` | ⬜ |
 
 ```bash
@@ -86,6 +86,25 @@ cannot issue itself one that simply *drops* the payee restriction. A naive
 subset check on the listed payees sees an empty diff and lets that through
 with unlimited reach. `Constraint::Any` is strictly wider than any
 `Constraint::Only`, and the rules are asymmetric on purpose.
+
+**Every decision gets a signed receipt, including the refusals.** A denial
+nobody can account for is an argument, and arguments about money are settled
+with evidence. Receipts are hash-chained, so deleting the inconvenient one
+breaks the link for every receipt after it. `quaestor-verify-receipts` checks
+a log with nothing but a public key and no network:
+
+```
+$ quaestor-verify-receipts --key <hex> receipts.jsonl
+OK  3 receipts verified
+    1 allowed, 1 denied, 1 escalated
+    head 84756437fd995a3530ac8d2bede64f119f146ddca14a94ce0f8c87b34e69db52
+
+$ sed '2d' receipts.jsonl | quaestor-verify-receipts --key <hex>
+FAILED  receipt 2: prev_hash does not match the receipt before it
+```
+
+This is the thing a managed provider structurally cannot offer. Their audit
+trail is a page in their console, and its correctness rests on them.
 
 **Two agents cannot both win the last dollar.** A budget is an aggregate over
 a time range, so the rows two racing transactions conflict over are the ones

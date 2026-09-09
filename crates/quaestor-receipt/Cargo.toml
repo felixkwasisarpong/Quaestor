@@ -1,0 +1,24 @@
+[package]
+name = "quaestor-receipt"
+description = "Signed, hash-chained decision receipts. Verifiable offline with nothing but a public key."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "quaestor-verify-receipts"
+path = "src/bin/verify.rs"
+
+[dependencies]
+quaestor-core = { path = "../quaestor-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+sha3 = { version = "0.10", default-features = false, features = ["std"] }

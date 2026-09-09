@@ -282,6 +282,29 @@ workspace's `missing_debug_implementations` lint is what raised it.
 
 ---
 
+## 014 — A signature does not stop a deletion
+
+**Day 15. Found by:** asking what a signed receipt actually proves.
+
+Signing each receipt stops anyone *altering* one. It does nothing at all
+about removing one. An operator who dislikes a particular denial can delete
+that line, and every remaining receipt still verifies perfectly, because each
+signature only ever covered its own contents.
+
+The gap is easy to miss because the individual check keeps passing. Nothing
+looks wrong. The record is simply shorter than it was.
+
+**Fix:** each receipt carries the hash of the one before it, so a removal
+breaks the link at that point and at every point after it. A test deletes the
+middle receipt, confirms each survivor still passes its own signature check,
+and confirms the chain fails anyway.
+
+The related case is worth stating too: a self-consistent chain proves nothing
+by itself. An attacker with their own key can produce a perfectly valid one.
+Verification takes the expected public key as an argument for that reason.
+
+---
+
 ## Open questions
 
 - `NonceStore::check_and_record` is documented as needing to be atomic. The

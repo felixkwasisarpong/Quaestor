@@ -711,6 +711,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "quaestor-receipt"
+version = "0.0.1"
+dependencies = [
+ "ed25519-dalek",
+ "quaestor-core",
+ "serde",
+ "serde_json",
+ "sha3",
+ "thiserror",
+]
+
+[[package]]
 name = "quaestor-verify"
 version = "0.0.1"
 dependencies = [
