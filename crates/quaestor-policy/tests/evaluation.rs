@@ -442,3 +442,98 @@ fn evaluation_never_panics_on_extreme_amounts() {
         let _ = decide(&i, &extreme);
     }
 }
+
+// ---------------------------------------------------------------------------
+// The recipient and the host are two different parties
+// ---------------------------------------------------------------------------
+//
+// Every fixture above uses the same string for the payee id and the payee
+// domain, which is what let `payee_key` prefer the wrong one for eight days
+// without a single test noticing. These four separate them. See BUGS.md #015.
+
+/// Paid to `recipient`, served by `host`. On x402 those are an address and a
+/// website, and they are routinely not the same party.
+fn split_payee(recipient: &str, host: &str) -> PaymentIntent {
+    let mut i = intent(1_000, recipient);
+    i.payee.id = PayeeId::new(recipient).expect("valid");
+    i.payee.domain = Some(host.to_owned());
+    i
+}
+
+#[test]
+fn a_blocked_recipient_is_blocked_however_the_resource_was_served() {
+    let mut p = policy();
+    p.deny_payees = vec!["0xbad".into()];
+
+    let v = evaluate(&Request {
+        intent: &split_payee("0xbad", "perfectly-ordinary.example"),
+        authority: &authority(),
+        policy: &p,
+        state: &quiet(),
+        now: NOW,
+    });
+    assert!(
+        matches!(&v, Verdict::Deny { reasons } if reasons.contains(&DenyReason::PayeeBlocked)),
+        "the block list names who gets the money: {v:?}"
+    );
+}
+
+#[test]
+fn a_blocked_host_is_blocked_whoever_it_says_to_pay() {
+    let mut p = policy();
+    p.deny_payees = vec!["known-bad.example".into()];
+
+    let v = evaluate(&Request {
+        intent: &split_payee("0xsomeoneelse", "known-bad.example"),
+        authority: &authority(),
+        policy: &p,
+        state: &quiet(),
+        now: NOW,
+    });
+    assert!(
+        matches!(&v, Verdict::Deny { reasons } if reasons.contains(&DenyReason::PayeeBlocked)),
+        "a block list matches any name the payee answers to: {v:?}"
+    );
+}
+
+#[test]
+fn delegated_authority_names_the_recipient_not_the_host() {
+    // The asymmetry. A block list matching more names is safer; an allow
+    // list matching more names hands out authority nobody granted. A mandate
+    // that permits paying `0xmerchant` must not be satisfiable by paying
+    // somebody else through a host that happens to be named `0xmerchant`.
+    let mut a = authority();
+    a.payees = Constraint::Only(["0xmerchant".to_owned()].into_iter().collect());
+
+    let v = evaluate(&Request {
+        intent: &split_payee("0xattacker", "0xmerchant"),
+        authority: &a,
+        policy: &policy(),
+        state: &quiet(),
+        now: NOW,
+    });
+    assert!(
+        matches!(&v, Verdict::Deny { reasons }
+            if reasons.iter().any(|r| matches!(r, DenyReason::ScopeWidened { .. }))),
+        "the host must not stand in for the recipient: {v:?}"
+    );
+}
+
+#[test]
+fn a_permitted_recipient_is_permitted_from_any_host() {
+    let mut a = authority();
+    a.payees = Constraint::Only(["0xmerchant".to_owned()].into_iter().collect());
+
+    let v = evaluate(&Request {
+        intent: &split_payee("0xmerchant", "some-cdn.example"),
+        authority: &a,
+        policy: &policy(),
+        state: &quiet(),
+        now: NOW,
+    });
+    assert!(
+        !matches!(&v, Verdict::Deny { reasons }
+            if reasons.iter().any(|r| matches!(r, DenyReason::ScopeWidened { .. }))),
+        "the grant is about the recipient, so the host is irrelevant: {v:?}"
+    );
+}

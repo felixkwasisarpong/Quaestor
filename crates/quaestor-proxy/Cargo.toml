@@ -1,0 +1,38 @@
+[package]
+name = "quaestor-proxy"
+description = "The inline gateway. An agent's payments pass through here, or they do not happen."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+quaestor-core = { path = "../quaestor-core" }
+quaestor-verify = { path = "../quaestor-verify" }
+quaestor-policy = { path = "../quaestor-policy" }
+quaestor-ledger = { path = "../quaestor-ledger" }
+quaestor-receipt = { path = "../quaestor-receipt" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+base64 = "0.22"
+ed25519-dalek = "2"
+sha3 = "0.10"
+toml = "0.8"
+postgres = "0.19"
+
+hyper = { version = "1", features = ["server", "client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "time", "io-util"] }
+
+[dev-dependencies]
+k256 = { version = "0.13", features = ["ecdsa"] }

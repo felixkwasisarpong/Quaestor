@@ -28,8 +28,26 @@ use serde::{Deserialize, Serialize};
 /// `Any` is strictly wider than any `Only`, including an `Only` listing
 /// everything currently known — because "everything currently known" and
 /// "whatever exists tomorrow" are different grants.
+///
+/// # Why the tag is adjacent and not internal
+///
+/// `#[serde(tag = "kind")]` alone does not work here, and it does not fail
+/// at compile time. Serde's internally-tagged representation has to insert
+/// the tag as a key beside the variant's own fields, which is impossible
+/// when the payload is a sequence: `Only` serializes at *runtime* to
+/// `Err("cannot serialize tagged newtype variant Constraint::Only
+/// containing a sequence")`.
+///
+/// A mandate is a thing you hand to somebody. One that cannot be written
+/// down is not a delegation, and this failed only on the path where a
+/// mandate crosses a wire — which nothing did until the proxy. See
+/// `BUGS.md` #016.
+///
+/// The `content` key moves the set into its own field, and none of this
+/// touches [`crate::mandate::chain::Mandate::signing_bytes`], which is
+/// hand-rolled: existing signatures are unaffected.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "values", rename_all = "snake_case")]
 pub enum Constraint<T: Ord> {
     /// No restriction. Only meaningful at the root of a chain.
     Any,

@@ -305,8 +305,104 @@ Verification takes the expected public key as an argument for that reason.
 
 ---
 
+## 015 — The block list matched the website, not the recipient
+
+**Day 17. Found by:** wiring the proxy to the policy engine and watching a
+payment to an explicitly blocked address sail through.
+
+`payee_key` read the payee's *domain* and fell back to the id only when the
+domain was absent:
+
+```rust
+intent.payee.domain.clone()
+    .unwrap_or_else(|| intent.payee.id.as_str().to_owned())
+```
+
+On x402 those name two different parties. The id is the address the money
+goes to; the domain is the host that served the resource. They are related by
+nothing at all — an attacker's address can be demanded by a perfectly
+ordinary website, which is most of the point of demanding it there.
+
+So `deny_payees = ["0xbad…"]` in a policy file did nothing whenever the
+proxy also knew the origin's hostname, which is always. It read correctly,
+it parsed correctly, and it blocked nothing.
+
+**Why it was missed for eight days:** the only fixture that exercises
+`payee_key` builds its intent with `PayeeId::new(domain)` and
+`domain: Some(domain)`. Both identifiers were the same string, so no test
+could tell which one the code was reading. The bug was invisible because the
+fixture had collapsed the distinction the code was getting wrong.
+
+**Fix, and the asymmetry inside it.** Authority is decided against the id —
+whoever receives the money. Block lists (`deny_payees`, `always_escalate`)
+match against *every* name the payee answers to.
+
+Those two rules point in opposite directions on purpose:
+
+- A block list matching more names produces more refusals. Being wrong in
+  that direction costs a payment.
+- An allow list matching more names hands out authority nobody granted. A
+  mandate permitting payment to `0xmerchant` must not be satisfiable by
+  paying someone else through a host that happens to be called `0xmerchant`.
+
+Four tests now separate the two identifiers, which is the thing the old
+fixture never did.
+
+---
+
+## 016 — A mandate could not be written down
+
+**Day 17. Found by:** the proxy putting a delegation chain in a header, which
+is the first time anything had.
+
+`Constraint` was `#[serde(tag = "kind")]`. Serde's internally-tagged
+representation inserts the tag as a key beside the variant's fields, which is
+impossible when the payload is a sequence — so `Constraint::Only` failed at
+*runtime* with:
+
+```
+cannot serialize tagged newtype variant Constraint::Only containing a sequence
+```
+
+Every mandate with any restriction on it — which is every mandate that
+restricts anything, which is the entire point of a mandate — could not be
+serialized to JSON. `Constraint::Any` serialized fine, which is the wrong half
+to have working.
+
+**Why it was missed:** the delegation tests build chains in memory, verify
+them in memory, and never write one out. That was reasonable while the only
+consumer was a library. A mandate is a thing you *hand to somebody*, and one
+that cannot leave the process is not a delegation.
+
+The same family as 001: a type that is correct in Rust and broken on the wire,
+failing at runtime on a path nothing exercised.
+
+**Fix:** adjacent tagging, `#[serde(tag = "kind", content = "values")]`. Three
+tests now round-trip a full signed chain, both constraint shapes, and confirm
+the signing bytes did not move — `signing_bytes` is hand-rolled, so the wire
+format and the signature are independent, and that independence is now
+asserted rather than assumed.
+
+---
+
 ## Open questions
 
+- `capture` is terminal and the ledger has no reversing entry. The proxy is
+  built around that — it captures only once the upstream connection is up,
+  so anything that fails earlier releases a hold that is still `held`. But an
+  operator who later establishes that a captured payment genuinely never
+  settled has no tool. That is a double-entry problem and it is what the
+  ledger's v2 is for.
+- Refusals before a payment verifies produce no receipt, deliberately: the
+  only amount and payee available are the ones inside the message being
+  rejected, and writing those into a signed chain would let anyone publish
+  claims into the evidence log. The cost is that a caller flooding the proxy
+  with unverifiable payments leaves no signed trace. Metrics, not receipts,
+  is probably the answer.
+- The gateway is behind one mutex. Reservations for a single principal
+  serialize in Postgres anyway, so the lock costs less than it looks like,
+  but it also serializes *different* principals, which the database would
+  not. First thing to revisit under real load.
 - `NonceStore::check_and_record` is documented as needing to be atomic. The
   in-memory implementation is; the Postgres one is not written yet. If it
   lands as a read followed by a write, two concurrent replays of the same

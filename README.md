@@ -54,7 +54,7 @@ resolves to `Deny` — never to `Allow`.
 | `quaestor-policy` | ✅ rule schema and deterministic evaluator; three verdicts |
 | `quaestor-ledger` | ✅ budget holds, concurrency-safe under real contention |
 | `quaestor-receipt` | ✅ signed, hash-chained receipts + offline verifier CLI |
-| `quaestor-proxy` | ⬜ |
+| `quaestor-proxy` | ✅ inline HTTP gateway; refused payments are not forwarded |
 
 ```bash
 ./scripts/check.sh   # exactly what CI runs: fmt, clippy, test, doc
@@ -65,6 +65,35 @@ resolves to `Deny` — never to `Allow`.
 QUAESTOR_TEST_PG="host=/tmp/pgsock port=5433 user=quaestor dbname=quaestor_test" \
   cargo test -p quaestor-ledger
 ```
+
+## Putting it in front of an agent
+
+Everything above is a library, and a library only runs if something calls it.
+`quaestor-proxy` is the part that is not optional: point the agent's HTTP
+client at it and a refused payment is not forwarded.
+
+```bash
+export QUAESTOR_RECEIPT_KEY=$(openssl rand -hex 32)
+export QUAESTOR_TOKEN_SHOPPER=$(openssl rand -hex 24)
+quaestor-proxy --config examples/quaestor.toml
+
+http_proxy=http://127.0.0.1:8402 your-agent
+```
+
+```
+agent ──▶ GET /report ─────────────────────▶ origin
+      ◀── 402 + accepts[] ◀───────────────── origin      (remembered)
+agent ──▶ GET /report + X-PAYMENT ──▶ quaestor
+                                        verify · evaluate · reserve · sign
+                                        ├─ allow  ──▶ capture, then forward
+                                        └─ refuse ──▶ 403 + signed receipt
+                                                      the origin sees nothing
+```
+
+The payment is checked against the `402` **the origin issued**, never the
+copy of it the agent enclosed. Skipping that is how a correct verifier ends
+up certifying that the agent agrees with itself; see [`BUGS.md`](BUGS.md)
+#003 for the underlying attack.
 
 ## Design notes
 
@@ -105,6 +134,15 @@ FAILED  receipt 2: prev_hash does not match the receipt before it
 
 This is the thing a managed provider structurally cannot offer. Their audit
 trail is a page in their console, and its correctness rests on them.
+
+**The point of no return is the write, not the response.** A card
+authorization is a promise held by the issuer: you ship, then capture, and an
+uncaptured hold lapses. An `X-PAYMENT` header is a bearer instrument — the
+resource server can settle it whenever it likes, including after returning a
+`500`. So capturing on a `200` means a server that pockets the authorization
+and errors gets paid *and* hands the budget back. Quaestor connects first,
+captures, and only then writes; anything that fails before the write releases
+the hold, and anything after it does not.
 
 **Two agents cannot both win the last dollar.** A budget is an aggregate over
 a time range, so the rows two racing transactions conflict over are the ones

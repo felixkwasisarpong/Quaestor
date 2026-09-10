@@ -58,6 +58,7 @@ pub fn evaluate(req: &Request<'_>) -> Verdict {
 
     let amount = req.intent.amount;
     let payee_key = payee_key(req.intent);
+    let payee_aliases = payee_aliases(req.intent);
 
     // ---- structural ----------------------------------------------------
     if amount.is_negative() {
@@ -110,7 +111,12 @@ pub fn evaluate(req: &Request<'_>) -> Verdict {
     }
 
     // ---- policy denials -------------------------------------------------
-    if req.policy.deny_payees.iter().any(|p| p == &payee_key) {
+    if req
+        .policy
+        .deny_payees
+        .iter()
+        .any(|p| payee_aliases.iter().any(|a| a == p))
+    {
         denials.push(DenyReason::PayeeBlocked);
     }
     if let Some(category) = &req.intent.payee.category {
@@ -204,9 +210,14 @@ pub fn evaluate(req: &Request<'_>) -> Verdict {
     if req.policy.escalate_first_seen_payee && !req.state.payee_seen_before() {
         escalations.push(EscalationReason::FirstSeenPayee);
     }
-    if req.policy.escalate_payees.iter().any(|p| p == &payee_key) {
+    if let Some(rule) = req
+        .policy
+        .escalate_payees
+        .iter()
+        .find(|p| payee_aliases.iter().any(|a| &a == p))
+    {
         escalations.push(EscalationReason::PolicyRequiresApproval {
-            rule: format!("payees.always_escalate contains {payee_key}"),
+            rule: format!("payees.always_escalate contains {rule}"),
         });
     }
 
@@ -261,10 +272,29 @@ fn consumes_more_than(amount: &Money, remaining: &Money, percent: u32) -> bool {
 ///
 /// The hostname where the rail supplies one, since that is what a person
 /// writes in a policy file; the rail's own identifier otherwise.
+/// The identifier authority is decided against: whoever actually receives
+/// the money.
+///
+/// This used to prefer the domain and fall back to the id, which is wrong in
+/// a way that is hard to see. On a rail like x402 the two name different
+/// parties — the id is the address the funds go to, the domain is the host
+/// that served the resource — and a delegation naming payees means the
+/// recipients, not the websites. See `BUGS.md` #015.
 fn payee_key(intent: &PaymentIntent) -> String {
-    intent
-        .payee
-        .domain
-        .clone()
-        .unwrap_or_else(|| intent.payee.id.as_str().to_owned())
+    intent.payee.id.as_str().to_owned()
+}
+
+/// Every name this payee answers to.
+///
+/// Deny and always-escalate lists match against all of them, because those
+/// are block lists: matching more names produces more refusals, and a
+/// refusal is the safe direction to be wrong in. Allow lists deliberately do
+/// *not* use this — there, matching more names would hand out authority
+/// nobody granted.
+fn payee_aliases(intent: &PaymentIntent) -> Vec<String> {
+    let id = intent.payee.id.as_str().to_owned();
+    match &intent.payee.domain {
+        Some(d) if d != &id => vec![id, d.clone()],
+        _ => vec![id],
+    }
 }

@@ -1,0 +1,44 @@
+# What this deployment allows, on top of what the mandate granted. Policy can
+# only ever narrow: there is deliberately no way to permit something the
+# delegation did not.
+
+version = 1
+currency = "USDC"
+
+[defaults]
+# Above this, a payment needs a human even if every cap allows it.
+unattended_limit = "2.000000 USDC"
+
+# Never paid this recipient before? Ask, rather than refusing.
+escalate_first_seen_payee = true
+
+# Ask when a payment would eat most of what is left. A whole percent, not a
+# fraction: this file is about money and should contain no floats at all.
+escalate_above_remaining_percent = 50
+
+# A hold that never expires is a budget one crashed agent freezes until
+# somebody notices, which is usually the month after.
+hold_ttl = "5m"
+
+# How long an escalation waits for a human before resolving to a denial.
+# Never to an allow.
+approval_ttl = "15m"
+
+[[budgets]]
+window = "24h"
+limit = "5.000000 USDC"
+
+[[budgets]]
+window = "30d"
+limit = "100.000000 USDC"
+
+[velocity]
+max_payments = 20
+window = "1h"
+
+[payees]
+deny = []
+always_escalate = []
+
+[categories]
+deny = []

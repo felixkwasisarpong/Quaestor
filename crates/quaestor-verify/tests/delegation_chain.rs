@@ -407,3 +407,55 @@ fn constraint_sets_serialize_in_a_stable_order() {
         link(&root, &key(2), s2, 1).signing_bytes()
     );
 }
+
+// ---------------------------------------------------------------------------
+// A mandate you cannot write down is not a delegation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_mandate_survives_a_json_round_trip_with_its_signature_intact() {
+    // Every test above builds mandates in memory and verifies them there,
+    // which is why nobody noticed that serializing one returned an error.
+    // A delegation chain exists to be handed to somebody else.
+    let (chain, roots) = honest_chain();
+
+    let json = serde_json::to_string(&chain).expect("a mandate must serialize");
+    let back: Vec<Mandate> = serde_json::from_str(&json).expect("and come back");
+
+    assert_eq!(
+        back, chain,
+        "byte for byte, or the signature is meaningless"
+    );
+    let authority = verify_chain(&back, &roots, NOW).expect("still verifies after the trip");
+    assert_eq!(
+        authority.scope,
+        verify_chain(&chain, &roots, NOW).expect("verifies").scope
+    );
+}
+
+#[test]
+fn both_constraint_shapes_round_trip() {
+    // `Any` and `Only` take different paths through serde, and only one of
+    // them was ever exercised.
+    for c in [
+        Constraint::Any,
+        Constraint::Only(BTreeSet::new()),
+        only(&["a.example", "b.example"]),
+    ] {
+        let json = serde_json::to_string(&c).expect("serialize");
+        let back: Constraint<String> = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, c, "{json}");
+    }
+}
+
+#[test]
+fn serializing_a_scope_does_not_change_what_it_signs() {
+    // The signing bytes are hand-rolled, so a change to the JSON shape must
+    // not move a signature. Stated as a test because the next person to
+    // adjust the wire format will need to know.
+    let (chain, _) = honest_chain();
+    let first = &chain[0];
+    let json = serde_json::to_string(first).expect("serialize");
+    let back: Mandate = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(back.signing_bytes(), first.signing_bytes());
+}
