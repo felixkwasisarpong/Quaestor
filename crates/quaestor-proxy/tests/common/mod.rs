@@ -17,8 +17,10 @@ use ed25519_dalek::{Signer as _, SigningKey as EdKey};
 use k256::ecdsa::SigningKey;
 use quaestor_core::{AgentId, Currency, Money, PrincipalId, Rail, Timestamp};
 use quaestor_policy::Policy;
-use quaestor_proxy::{Caller, Config, Gateway, Holds, Identities, InMemoryHolds, ReserveRequest};
-use quaestor_receipt::Signer;
+use quaestor_proxy::{
+    Caller, Config, Gateway, Holds, Identities, InMemoryHolds, MemorySink, ReceiptSink,
+    ReserveRequest,
+};
 use quaestor_verify::eip712::{
     keccak256, signing_digest, Address, Domain, TransferWithAuthorization,
 };
@@ -156,13 +158,30 @@ pub fn challenge_body(pay_to: &str, atomic: u128) -> Vec<u8> {
 /// from `pay_to` on purpose: the interesting attack is a payload that is
 /// entirely self-consistent and pays the wrong person.
 pub fn payment(pay_to: &str, atomic: u128, nonce: u8, accepted: PaymentRequirements) -> String {
+    payment_in_window(pay_to, atomic, nonce, accepted, VALID_AFTER, VALID_BEFORE)
+}
+
+/// The same, with the validity window supplied.
+///
+/// The gateway tests hold time still and sign against a fixed epoch. The
+/// crash harness drives the real binary, which reads the real clock, so its
+/// payments have to be valid *now*. Sharing one builder keeps the two from
+/// drifting into testing different things.
+pub fn payment_in_window(
+    pay_to: &str,
+    atomic: u128,
+    nonce: u8,
+    accepted: PaymentRequirements,
+    valid_after: u64,
+    valid_before: u64,
+) -> String {
     let payer = payer_address();
     let auth = TransferWithAuthorization {
         from: payer,
         to: addr(pay_to),
         value: atomic,
-        valid_after: VALID_AFTER,
-        valid_before: VALID_BEFORE,
+        valid_after,
+        valid_before,
         nonce: [nonce; 32],
     };
     let domain = Domain {
@@ -185,8 +204,8 @@ pub fn payment(pay_to: &str, atomic: u128, nonce: u8, accepted: PaymentRequireme
                 from: hex(&payer),
                 to: pay_to.to_owned(),
                 value: atomic.to_string(),
-                valid_after: VALID_AFTER.to_string(),
-                valid_before: VALID_BEFORE.to_string(),
+                valid_after: valid_after.to_string(),
+                valid_before: valid_before.to_string(),
                 nonce: hex(&[nonce; 32]),
             },
         },
@@ -198,6 +217,26 @@ pub fn payment(pay_to: &str, atomic: u128, nonce: u8, accepted: PaymentRequireme
 /// The ordinary case: pays the merchant the demanded amount, and says so.
 pub fn honest_payment(atomic: u128, nonce: u8) -> String {
     payment(MERCHANT, atomic, nonce, requirements(MERCHANT, atomic))
+}
+
+pub fn unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_secs()
+}
+
+/// An honest payment whose window is open against the wall clock.
+pub fn honest_payment_now(atomic: u128, nonce: u8) -> String {
+    let now = unix_secs();
+    payment_in_window(
+        MERCHANT,
+        atomic,
+        nonce,
+        requirements(MERCHANT, atomic),
+        now.saturating_sub(60),
+        now.saturating_add(600),
+    )
 }
 
 pub fn intent_id_for(nonce: u8) -> String {
@@ -288,13 +327,56 @@ pub fn identities() -> Identities {
 }
 
 pub fn gateway_with(holds: Box<dyn Holds>, identities: Identities) -> Gateway {
+    gateway_logging_to(holds, identities, Box::new(MemorySink::new()))
+}
+
+/// A gateway whose receipt log the test supplies, so the persistence
+/// ordering can be asserted rather than assumed.
+pub fn gateway_logging_to(
+    holds: Box<dyn Holds>,
+    identities: Identities,
+    sink: Box<dyn ReceiptSink>,
+) -> Gateway {
     Gateway::new(
         Config::new(policy(), registry()),
         identities,
         holds,
         Box::new(InMemoryNonceStore::default()),
-        Signer::new(ed_key(0xAA)),
+        ed_key(0xAA),
+        sink,
     )
+}
+
+/// A [`MemorySink`] the test keeps a handle on.
+#[derive(Debug, Clone, Default)]
+pub struct SharedSink(std::sync::Arc<std::sync::Mutex<MemorySink>>);
+
+impl SharedSink {
+    pub fn new() -> SharedSink {
+        SharedSink::default()
+    }
+
+    pub fn receipts(&self) -> Vec<quaestor_receipt::Receipt> {
+        self.0.lock().expect("not poisoned").receipts().to_vec()
+    }
+}
+
+impl ReceiptSink for SharedSink {
+    fn append(
+        &mut self,
+        receipt: &quaestor_receipt::Receipt,
+    ) -> Result<(), quaestor_proxy::SinkError> {
+        self.0.lock().expect("not poisoned").append(receipt)
+    }
+    fn tail(&self) -> Option<&quaestor_receipt::Receipt> {
+        // A shared sink cannot hand out a borrow through its lock. Tests
+        // that need resume-from-tail use `JsonLinesSink`, which is the one
+        // that has to get this right in production anyway.
+        None
+    }
+    fn len(&self) -> u64 {
+        self.0.lock().expect("not poisoned").len()
+    }
 }
 
 pub fn gateway() -> Gateway {

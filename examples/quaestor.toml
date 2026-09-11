@@ -3,6 +3,11 @@
 listen = "127.0.0.1:8402"
 policy = "examples/policy.toml"
 
+# Where decision receipts are appended, as JSON Lines. Required, with no
+# default: a gateway that signs receipts and writes them nowhere leaves the
+# only copy of the evidence with the party it is auditing.
+receipt_log = "receipts.jsonl"
+
 # How long a remembered `402` stays valid. Should comfortably exceed the time
 # an agent takes to sign a payment and come back, and should not greatly
 # exceed the origin's own maxTimeoutSeconds: a challenge we still honour

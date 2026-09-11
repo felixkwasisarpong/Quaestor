@@ -68,6 +68,7 @@
 //! the ledger said no.
 
 use base64::Engine as _;
+use ed25519_dalek::SigningKey;
 use quaestor_core::{
     AgentId, CallContext, Currency, DenyReason, IdempotencyKey, IntentId, Money, Payee, PayeeId,
     PaymentIntent, PrincipalId, Rail, Timestamp, Verdict,
@@ -80,8 +81,10 @@ use quaestor_verify::x402::{
 };
 
 use crate::challenge::{ChallengeKey, ChallengeStore};
+use crate::chaos;
 use crate::holds::{Holds, ReserveRequest};
 use crate::identity::{Caller, Identities};
+use crate::sink::ReceiptSink;
 
 /// The parts of an inbound request the gateway is allowed to see.
 ///
@@ -232,26 +235,40 @@ pub struct Gateway {
     nonces: Box<dyn NonceStore + Send>,
     holds: Box<dyn Holds>,
     signer: Signer,
+    receipts: Box<dyn ReceiptSink>,
 }
 
 impl core::fmt::Debug for Gateway {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Gateway")
             .field("challenges", &self.challenges.len())
+            .field("receipts", &self.receipts.len())
             .field("identities", &"<redacted>")
             .finish_non_exhaustive()
     }
 }
 
 impl Gateway {
+    /// Build a gateway, resuming the receipt chain from whatever the sink
+    /// already holds.
+    ///
+    /// The signing key is taken rather than a ready-made [`Signer`] so that
+    /// resuming is not something a caller can forget to do. A gateway that
+    /// restarted and began a fresh chain at sequence zero would produce a
+    /// log that fails to verify, and the failure would look like tampering.
     pub fn new(
         config: Config,
         identities: Identities,
         holds: Box<dyn Holds>,
         nonces: Box<dyn NonceStore + Send>,
-        signer: Signer,
+        key: SigningKey,
+        receipts: Box<dyn ReceiptSink>,
     ) -> Gateway {
         let challenges = ChallengeStore::new(config.challenge_ttl_ms, config.challenge_capacity);
+        let signer = match receipts.tail() {
+            Some(last) => Signer::resume(key, last),
+            None => Signer::new(key),
+        };
         Gateway {
             config,
             identities,
@@ -259,11 +276,17 @@ impl Gateway {
             nonces,
             holds,
             signer,
+            receipts,
         }
     }
 
     pub fn public_key(&self) -> [u8; 32] {
         self.signer.public_key()
+    }
+
+    /// How many receipts this gateway's log holds. Diagnostics only.
+    pub fn receipts_written(&self) -> u64 {
+        self.receipts.len()
     }
 
     pub fn challenges_held(&self) -> usize {
@@ -415,6 +438,7 @@ impl Gateway {
     /// Reserve, receipt, capture, and hand the transport a payment it is now
     /// obliged to account for.
     fn commit(&mut self, intent: &PaymentIntent, now: Timestamp) -> Outcome {
+        chaos::at("reserve.before");
         let reservation = self.holds.reserve(&ReserveRequest {
             principal: intent.principal.as_str(),
             agent: intent.agent.as_str(),
@@ -491,6 +515,10 @@ impl Gateway {
             }
         };
 
+        // The hold is committed and nothing has recorded why. See
+        // `quaestor_chaos::points` for what must survive a crash here.
+        chaos::at("reserve.after");
+
         let allow = Verdict::Allow {
             hold: quaestor_core::Hold {
                 intent: intent.id.clone(),
@@ -498,7 +526,30 @@ impl Gateway {
                 expires_at: hold.expires_at,
             },
         };
-        let receipt = self.issue(intent, &allow, now);
+
+        // A payment we cannot write down does not go out. The alternative is
+        // an authorization in the world with nothing accounting for it,
+        // which is the exact situation the receipt chain exists to make
+        // impossible, so failing to record has to be as fatal as failing to
+        // reserve.
+        let receipt = match self.issue(intent, &allow, now) {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = self.holds.release(intent.id.as_str(), now);
+                let verdict = Verdict::Deny {
+                    reasons: vec![DenyReason::StateUnavailable {
+                        detail: format!("the decision could not be recorded: {e}"),
+                    }],
+                };
+                // Deliberately not `receipted_refusal`: the sink that just
+                // failed is the same one that refusal would try to write to.
+                return Outcome::Refuse(Box::new(Refusal {
+                    kind: RefusalKind::Unavailable,
+                    detail: describe(&verdict),
+                    receipt: None,
+                }));
+            }
+        };
 
         Outcome::Forward {
             intent_id: intent.id.as_str().to_owned(),
@@ -667,8 +718,15 @@ impl Gateway {
         snap
     }
 
-    fn issue(&mut self, intent: &PaymentIntent, verdict: &Verdict, now: Timestamp) -> Receipt {
-        self.signer.issue(
+    /// Sign a receipt and write it down, in that order, before anyone sees
+    /// the verdict it records.
+    fn issue(
+        &mut self,
+        intent: &PaymentIntent,
+        verdict: &Verdict,
+        now: Timestamp,
+    ) -> Result<Receipt, crate::sink::SinkError> {
+        let receipt = self.signer.issue(
             intent.id.as_str(),
             intent.principal.as_str(),
             intent.agent.as_str(),
@@ -677,9 +735,27 @@ impl Gateway {
             verdict,
             self.config.policy.version_hash,
             now,
-        )
+        );
+
+        // Signed, and existing nowhere but this stack frame. A crash here
+        // loses it, and losing it is safe precisely because nothing has
+        // happened on the strength of it yet.
+        chaos::at("receipt.after_sign");
+
+        self.receipts.append(&receipt)?;
+
+        // Durable, and not yet anybody else's business.
+        chaos::at("receipt.after_persist");
+
+        Ok(receipt)
     }
 
+    /// Refuse, with the reasons written down.
+    ///
+    /// If the log cannot be written the refusal still stands. Refusing is
+    /// the safe outcome whatever else is broken, and downgrading a denial to
+    /// an approval because the audit log was full would be an absurd way to
+    /// lose money. The agent is told the record is missing.
     fn receipted_refusal(
         &mut self,
         kind: RefusalKind,
@@ -687,12 +763,21 @@ impl Gateway {
         verdict: &Verdict,
         now: Timestamp,
     ) -> Outcome {
-        let receipt = self.issue(intent, verdict, now);
-        Outcome::Refuse(Box::new(Refusal {
-            kind,
-            detail: describe(verdict),
-            receipt: Some(receipt),
-        }))
+        match self.issue(intent, verdict, now) {
+            Ok(receipt) => Outcome::Refuse(Box::new(Refusal {
+                kind,
+                detail: describe(verdict),
+                receipt: Some(receipt),
+            })),
+            Err(e) => Outcome::Refuse(Box::new(Refusal {
+                kind,
+                detail: format!(
+                    "{} (this refusal could not be written to the receipt log: {e})",
+                    describe(verdict)
+                ),
+                receipt: None,
+            })),
+        }
     }
 }
 

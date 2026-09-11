@@ -728,3 +728,126 @@ fn a_chain_for_a_different_principal_is_not_this_callers_authority() {
     assert_eq!(kind, RefusalKind::Denied);
     assert!(detail.contains("the chain is for principal"), "{detail}");
 }
+
+// ---------------------------------------------------------------------------
+// The record is written before the verdict escapes
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_decision_is_on_disk_before_the_agent_learns_it() {
+    // The ordering the crash-safety argument rests on. If the receipt were
+    // written after the verdict went out, a crash in between would leave a
+    // payment in the world with nothing accounting for it.
+    let sink = SharedSink::new();
+    let mut g = gateway_logging_to(
+        Box::new(InMemoryHolds::new()),
+        identities(),
+        Box::new(sink.clone()),
+    );
+    g.record_challenge(
+        "felix",
+        "GET",
+        TARGET,
+        &challenge_body(MERCHANT, 1_000_000),
+        NOW,
+    );
+
+    let out = g.on_request(
+        &req(Some(&honest_payment(1_000_000, 1)), &bearer(TOKEN)),
+        NOW,
+    );
+
+    let Outcome::Forward { receipt, .. } = out else {
+        panic!("expected a forward");
+    };
+    let written = sink.receipts();
+    assert_eq!(written.len(), 1, "the log has it already");
+    assert_eq!(written[0], *receipt, "and it is the same one");
+}
+
+#[test]
+fn refusals_are_written_down_too() {
+    let sink = SharedSink::new();
+    let mut g = gateway_logging_to(
+        Box::new(InMemoryHolds::new()),
+        identities(),
+        Box::new(sink.clone()),
+    );
+    g.record_challenge(
+        "felix",
+        "GET",
+        TARGET,
+        &challenge_body(ATTACKER, 1_000_000),
+        NOW,
+    );
+    let blocked = payment(ATTACKER, 1_000_000, 1, requirements(ATTACKER, 1_000_000));
+
+    let (kind, _, _) = refusal(&g.on_request(&req(Some(&blocked), &bearer(TOKEN)), NOW));
+    assert_eq!(kind, RefusalKind::Denied);
+    assert_eq!(sink.receipts().len(), 1, "a denial is evidence");
+}
+
+#[test]
+fn a_payment_that_cannot_be_recorded_does_not_go_out() {
+    // A decision nobody can account for must not become a payment. The hold
+    // goes back, because the alternative is a budget consumed for something
+    // that never happened and was never written down.
+    let holds = SharedHolds::new();
+    let mut g = gateway_logging_to(
+        Box::new(holds.clone()),
+        identities(),
+        Box::new(quaestor_proxy::FailingSink),
+    );
+    g.record_challenge(
+        "felix",
+        "GET",
+        TARGET,
+        &challenge_body(MERCHANT, 1_000_000),
+        NOW,
+    );
+
+    let out = g.on_request(
+        &req(Some(&honest_payment(1_000_000, 1)), &bearer(TOKEN)),
+        NOW,
+    );
+
+    let (kind, detail, receipt) = refusal(&out);
+    assert_eq!(kind, RefusalKind::Unavailable);
+    assert_eq!(kind.status(), 503);
+    assert!(detail.contains("could not be recorded"), "{detail}");
+    assert!(receipt.is_none(), "there is nowhere to have put one");
+    assert_eq!(
+        holds.state_of(&intent_id_for(1)),
+        Some(HoldState::Released),
+        "the budget goes back rather than being spent on a secret"
+    );
+}
+
+#[test]
+fn a_refusal_stands_even_when_the_log_is_unwritable() {
+    // The asymmetry. Refusing is safe whatever else is broken, and
+    // downgrading a denial to an approval because the audit log was full
+    // would be an absurd way to lose money.
+    let mut g = gateway_logging_to(
+        Box::new(InMemoryHolds::new()),
+        identities(),
+        Box::new(quaestor_proxy::FailingSink),
+    );
+    g.record_challenge(
+        "felix",
+        "GET",
+        TARGET,
+        &challenge_body(ATTACKER, 1_000_000),
+        NOW,
+    );
+    let blocked = payment(ATTACKER, 1_000_000, 1, requirements(ATTACKER, 1_000_000));
+
+    let (kind, detail, receipt) = refusal(&g.on_request(&req(Some(&blocked), &bearer(TOKEN)), NOW));
+
+    assert_eq!(kind, RefusalKind::Denied, "still refused");
+    assert!(receipt.is_none());
+    assert!(
+        detail.contains("could not be written to the receipt log"),
+        "the agent is told the record is missing: {detail}"
+    );
+}

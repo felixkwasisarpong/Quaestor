@@ -610,3 +610,21 @@ fn amounts_survive_the_database_round_trip_at_full_range() {
         "no truncation on the way through"
     );
 }
+
+#[test]
+fn the_schema_can_be_applied_twice() {
+    // `quaestor-proxy` migrates on startup, so a migration that succeeds
+    // only once is a process that starts only once, and the first crash is
+    // permanent. Every statement here carried IF NOT EXISTS except
+    // CREATE TYPE, which has no such syntax. See BUGS.md #018.
+    let Some(conn) = conn_string() else {
+        return;
+    };
+    let client = Client::connect(&conn, NoTls).expect("connect");
+    let mut store = Store::new(client);
+    store.migrate().expect("first");
+    store
+        .migrate()
+        .expect("a restart applies the same schema again");
+    store.migrate().expect("and again");
+}

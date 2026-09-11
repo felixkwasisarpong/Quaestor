@@ -11,7 +11,14 @@ authors.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+# Compiles the crash points in. Nothing that ships enables this; see
+# `src/chaos.rs` for why that is not merely tidiness.
+chaos = ["dep:quaestor-chaos", "quaestor-ledger/chaos"]
+
 [dependencies]
+quaestor-chaos = { path = "../quaestor-chaos", optional = true }
 quaestor-core = { path = "../quaestor-core" }
 quaestor-verify = { path = "../quaestor-verify" }
 quaestor-policy = { path = "../quaestor-policy" }
@@ -36,3 +43,4 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync",
 
 [dev-dependencies]
 k256 = { version = "0.13", features = ["ecdsa"] }
+quaestor-chaos = { path = "../quaestor-chaos", features = ["postgres"] }

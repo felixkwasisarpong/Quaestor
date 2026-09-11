@@ -54,6 +54,7 @@
     )
 )]
 
+pub(crate) mod chaos;
 pub mod holds;
 
 pub use holds::{HoldRecord, HoldState, LedgerError, Reservation, Store};

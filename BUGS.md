@@ -385,8 +385,160 @@ asserted rather than assumed.
 
 ---
 
+## 017 — The proxy could never talk to a database
+
+**Day 19. Found by:** a crash harness whose first action is to start the
+process, kill it, and start it again.
+
+`run()` was annotated `#[tokio::main]`. Inside it, `postgres::Client::connect`
+ran. The `postgres` crate is the *blocking* client: it owns a runtime and
+drives it with `block_on`, which panics when called from inside another
+runtime's worker.
+
+```
+thread 'main' panicked at postgres-0.19.14/src/config.rs:465:44:
+Cannot start a runtime from within a runtime.
+```
+
+So `quaestor-proxy` aborted at startup whenever `QUAESTOR_PG` was set. Not
+degraded, not slow: dead, before it ever listened.
+
+It was worse one layer down. `http.rs` opened with a comment saying gateway
+work "happens on a blocking thread, because the ledger underneath it is a
+synchronous Postgres client" — and then locked the gateway inline in an
+`async fn`. The comment described a design nobody had implemented, so every
+request touching the ledger would have panicked the same way.
+
+**Why nobody noticed for two days.** Every test set `allow_volatile_ledger`
+and ran on `InMemoryHolds`. The in-memory ledger exists for demos; the
+Postgres one is the only ledger anyone would deploy. **The single
+configuration that matters was the single configuration never exercised**,
+and the eleven end-to-end tests all passed while the real thing could not
+boot.
+
+The smoke test on day 18 did not catch it either, for the same reason: it
+used the example config, which sets `allow_volatile_ledger = true`.
+
+**Fix:** `run()` is a plain function. All setup is synchronous and the
+runtime is entered only to serve. Every gateway call now goes through one
+`Proxy::with_gateway`, which does the `spawn_blocking` handoff, so a future
+call site cannot forget it by writing the obvious thing.
+
+**The lesson is not "test the database path".** It is that a comment
+describing a handoff is not a handoff, and that the configuration you skip in
+tests is chosen by which one is inconvenient, which is reliably the real one.
+
+---
+
+## 018 — The first crash was permanent
+
+**Day 19. Found by:** the same harness, on its second `start()`.
+
+`quaestor-proxy` applies the schema on startup. Six of the seven statements
+in the migration carry `IF NOT EXISTS`. The seventh is:
+
+```sql
+CREATE TYPE hold_state AS ENUM ('held', 'captured', 'released', 'expired');
+```
+
+Postgres has no `CREATE TYPE IF NOT EXISTS`, so that one statement had no
+guard, and the whole migration failed on its second run with
+`type "hold_state" already exists`.
+
+The consequence is not "an untidy error on restart". The proxy treats a
+failed migration as fatal and exits. **The process could start exactly once
+against any given database.** A crash-safe design whose recovery step is
+"come back up" had a recovery step that could not run.
+
+**Why it was missed:** the ledger's own tests create the schema once per
+database and the concurrency suite reuses it. Nothing had ever asked the same
+process to migrate twice, because nothing had ever restarted.
+
+**Fix:** a `DO` block that swallows `duplicate_object`, and a test that
+applies the schema three times in a row. The test is the point — the fix is
+one SQL idiom, and the reason it was absent is that migrating twice was never
+an exercised path.
+
+---
+
+## 019 — The transparency log was never written down
+
+**Day 19. Found by:** writing an invariant checker that wanted to read the
+receipt log and discovering there was nothing to read.
+
+`quaestor-receipt` is careful work. Receipts are signed, hash-chained,
+verifiable offline with nothing but a public key, and a deletion breaks the
+link. `README.md` said all of that. Fourteen tamper tests backed it up.
+
+The proxy signed each receipt, put it in a response header, and dropped it.
+
+So the only copy of any decision was held by the agent whose spending the
+decision constrained. "Deleting the awkward receipt breaks the chain" is a
+true statement about a log, and there was no log — an operator asked for
+their history would have had nothing to hand over, doctored or otherwise.
+
+Every claim was true in the crate and vacuous in the product.
+
+**Fix:** a `ReceiptSink`, and a `JsonLinesSink` that appends and fsyncs
+before the verdict reaches anybody. Three consequences fell out of getting
+the ordering right, and all three are now tested:
+
+- an allowed payment whose receipt cannot be written is **refused**, and its
+  hold released, because a payment nobody can account for is the thing the
+  chain exists to prevent;
+- a *refusal* that cannot be written still stands, because refusing is safe
+  whatever else is broken, and downgrading a denial because the audit log was
+  full would be an absurd way to lose money;
+- a restart resumes the chain from the persisted tail, which is why a crash
+  between signing and persisting is safe: the lost receipt never escaped, so
+  reusing its sequence number forks nothing.
+
+That last one is `receipt.after_sign` in the harness.
+
+---
+
+## What the harness found, and what it confirmed
+
+All eight crash points behave as written down beforehand. The three bugs
+above were all found *before the first crash ran*, by the setup steps.
+
+The confirmed claims, each now evidence rather than argument:
+
+| killed at | left behind | verdict |
+|---|---|---|
+| `reserve.before` | nothing | a decision never written down did not happen |
+| `ledger.mid_transaction` | nothing | the reservation really is one transaction |
+| `reserve.after` | `held`, no receipt | expires, budget returns |
+| `receipt.after_sign` | `held`, no receipt | the lost receipt never escaped |
+| `receipt.after_persist` | `held`, chain verifies | agent retries, no double hold |
+| `connect.after` | `held`, origin saw nothing | |
+| `capture.after` | `captured`, origin paid 0 times | the deliberate, visible cost |
+| `write.after` | `captured`, origin paid once | ledger and reality agree |
+
+**And the harness was watched failing**, per #012. Deleting the pre-write
+capture from `http.rs` turns `write.after` red with exactly the right
+sentence:
+
+```
+BROKEN: no money without a committed spend: the origin was paid for
+        x402:0101…, but its hold is `held`, so the budget will be
+        handed back for money that moved
+```
+
+Restore the four lines and it goes green. A crash test nobody has watched
+fail is decoration.
+
+---
+
 ## Open questions
 
+- The nonce store in `quaestor-proxy` is `InMemoryNonceStore`, so a restart
+  forgets every nonce it has seen. A replayed authorization survives this
+  only because the ledger's unique index on `(principal, idempotency_key)`
+  refuses the second reservation — defence in depth that happens to work,
+  not a designed guarantee. The harness asserts it
+  (`a_restart_must_not_make_a_spent_authorization_spendable_again`), and it
+  should not be the thing standing between a restart and a double payment.
 - `capture` is terminal and the ledger has no reversing entry. The proxy is
   built around that — it captures only once the upstream connection is up,
   so anything that fails earlier releases a hold that is still `held`. But an

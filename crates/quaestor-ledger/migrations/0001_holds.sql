@@ -23,7 +23,23 @@ CREATE TABLE IF NOT EXISTS budget_accounts (
     PRIMARY KEY (principal, currency)
 );
 
-CREATE TYPE hold_state AS ENUM ('held', 'captured', 'released', 'expired');
+-- Postgres has no `CREATE TYPE IF NOT EXISTS`, so this is the DO block that
+-- stands in for it. Every other statement in this file carries IF NOT
+-- EXISTS; this one could not, and so it was the single statement that made
+-- the whole migration fail on its second run.
+--
+-- That is not a cosmetic difference. `quaestor-proxy` migrates on startup,
+-- so a migration that only succeeds once is a process that only starts once:
+-- the first crash is permanent, because coming back up is what fails. Found
+-- on day 19 by a harness whose first act is to restart the thing. See
+-- `BUGS.md` #018.
+DO $$
+BEGIN
+    CREATE TYPE hold_state AS ENUM ('held', 'captured', 'released', 'expired');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS holds (
     intent_id     TEXT PRIMARY KEY,

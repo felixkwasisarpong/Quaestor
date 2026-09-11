@@ -4,9 +4,9 @@
 through Quaestor, which verifies the authorization behind it, enforces the
 budget, and signs a receipt for the decision — before a cent moves.
 
-> Status: **pre-alpha, day 1.** The core types are here and tested. The
-> verifier, policy engine and proxy are not built yet. Watch the repo if you
-> want to know when it does something.
+> Status: **pre-alpha, day 20 of 28.** Every layer is built and tested and
+> the proxy runs. Not yet used in front of real money by anyone, including
+> me. [`BUGS.md`](BUGS.md) is the honest record of what has broken so far.
 
 ---
 
@@ -55,6 +55,7 @@ resolves to `Deny` — never to `Allow`.
 | `quaestor-ledger` | ✅ budget holds, concurrency-safe under real contention |
 | `quaestor-receipt` | ✅ signed, hash-chained receipts + offline verifier CLI |
 | `quaestor-proxy` | ✅ inline HTTP gateway; refused payments are not forwarded |
+| `quaestor-chaos` | ✅ crash injection at 8 points, with invariants checked after restart |
 
 ```bash
 ./scripts/check.sh   # exactly what CI runs: fmt, clippy, test, doc
@@ -64,6 +65,11 @@ resolves to `Deny` — never to `Allow`.
 # than a red one.
 QUAESTOR_TEST_PG="host=/tmp/pgsock port=5433 user=quaestor dbname=quaestor_test" \
   cargo test -p quaestor-ledger
+
+# Crash injection: kills the real process at 8 points inside the payment
+# path, restarts it, and checks what survived.
+QUAESTOR_TEST_PG="..." cargo test -p quaestor-proxy --features chaos \
+  --test crash -- --test-threads=1 --nocapture
 ```
 
 ## Putting it in front of an agent
@@ -157,6 +163,30 @@ digest — not that the payment goes where the merchant asked. Change the `to`
 address on a genuine x402 authorization and the signature over *that* is
 still valid. The binding checks are what make it mean something, and they run
 before signature recovery. See [`BUGS.md`](BUGS.md) #003.
+
+**Crash safety is tested by crashing.** Eight named points inside the real
+payment path, each one a written-down claim about what must survive. The
+proxy runs as a real process against a real Postgres, is killed with `abort`
+at the armed point, restarted, and the surviving state is checked by a
+module that reads the holds table with its own SQL rather than the ledger's:
+
+```
+=== capture.after ===
+  after:   the spend is committed, before a byte of the payment is written
+  left:    1 hold(s), 1 receipt(s), origin paid 0 time(s)
+           hold x402:0101… is captured
+
+=== write.after ===
+  after:   the payment is on the wire, before the response comes back
+  left:    1 hold(s), 1 receipt(s), origin paid 1 time(s)
+           hold x402:0101… is captured
+```
+
+The harness has been watched failing: delete the pre-write capture and
+`write.after` reports *the origin was paid, but its hold is `held`*. It found
+three bugs before it ran a single crash, including a proxy that could not
+talk to Postgres at all and a migration that let the process start exactly
+once. See [`BUGS.md`](BUGS.md) #017 to #019.
 
 [`PRINCIPLES.md`](PRINCIPLES.md) covers the rest, including why the policy
 evaluator may not read the clock.

@@ -20,8 +20,9 @@ use ed25519_dalek::SigningKey;
 use quaestor_core::{AgentId, Currency, Money, PrincipalId, Rail, Timestamp};
 use quaestor_policy::Policy;
 use quaestor_proxy::http::{Proxy, SystemClock};
-use quaestor_proxy::{Caller, Config, Gateway, Identities, InMemoryHolds, PostgresHolds};
-use quaestor_receipt::Signer;
+use quaestor_proxy::{
+    Caller, Config, Gateway, Identities, InMemoryHolds, JsonLinesSink, PostgresHolds, ReceiptSink,
+};
 use quaestor_verify::mandate::{Constraint, Scope};
 use quaestor_verify::x402::{AssetRegistry, AssetSpec, InMemoryNonceStore};
 use serde::Deserialize;
@@ -54,6 +55,12 @@ ENVIRONMENT:
 struct FileConfig {
     listen: String,
     policy: String,
+    /// Where decision receipts are appended, as JSON Lines.
+    ///
+    /// Required, and with no default. A gateway that signs receipts and
+    /// writes them nowhere leaves the only copy of the evidence in the hands
+    /// of the party it is auditing.
+    receipt_log: String,
     #[serde(default)]
     challenge_ttl_seconds: Option<i64>,
     #[serde(default)]
@@ -101,8 +108,22 @@ fn main() {
     }
 }
 
-#[tokio::main(flavor = "multi_thread")]
-async fn run() -> Result<(), String> {
+/// Set everything up, then serve.
+///
+/// Deliberately **not** `#[tokio::main]`. The `postgres` crate's `Client` is
+/// the blocking client: it owns a runtime and drives it with `block_on`, so
+/// constructing one from inside another runtime's worker panics with
+/// "cannot start a runtime from within a runtime".
+///
+/// This function had that annotation, and so opening a real ledger crashed
+/// the process before it ever listened. Nothing caught it because every test
+/// ran on the in-memory ledger, which meant the only setting anybody would
+/// deploy was the only one never exercised. Found on day 19 by a harness
+/// whose first step is to start the process twice. See `BUGS.md` #017.
+///
+/// So: all setup happens synchronously, out here, and the runtime is entered
+/// only to serve.
+fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{USAGE}");
@@ -126,7 +147,10 @@ async fn run() -> Result<(), String> {
         std::fs::read_to_string(&file.policy).map_err(|e| format!("{}: {e}", file.policy))?;
     let policy = Policy::parse(&policy_text).map_err(|e| format!("{}: {e}", file.policy))?;
 
-    let signer = Signer::new(receipt_key()?);
+    let key = receipt_key()?;
+    let sink =
+        JsonLinesSink::open(&file.receipt_log).map_err(|e| format!("{}: {e}", file.receipt_log))?;
+    let resumed_at = sink.len();
     let registry = build_registry(&file.assets)?;
     let now = Timestamp(
         i64::try_from(
@@ -147,13 +171,14 @@ async fn run() -> Result<(), String> {
     }
 
     let holds = open_ledger(file.allow_volatile_ledger)?;
-    let public_key = signer.public_key();
+    let public_key = key.verifying_key().to_bytes();
     let gateway = Gateway::new(
         config,
         identities,
         holds,
         Box::new(InMemoryNonceStore::default()),
-        signer,
+        key,
+        Box::new(sink),
     );
 
     let addr: std::net::SocketAddr = file
@@ -163,6 +188,10 @@ async fn run() -> Result<(), String> {
 
     println!("quaestor-proxy listening on {addr}");
     println!("receipt signing key (public): {}", hex(&public_key));
+    println!(
+        "receipt log: {} ({resumed_at} receipts already recorded)",
+        file.receipt_log
+    );
     println!();
     println!("Verify a receipt log against that key with:");
     println!(
@@ -170,10 +199,17 @@ async fn run() -> Result<(), String> {
         hex(&public_key)
     );
 
-    Proxy::new(gateway, Arc::new(SystemClock))
-        .serve(addr)
-        .await
-        .map_err(|e| e.to_string())
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("could not start the runtime: {e}"))?;
+
+    runtime.block_on(async move {
+        Proxy::new(gateway, Arc::new(SystemClock))
+            .serve(addr)
+            .await
+            .map_err(|e| e.to_string())
+    })
 }
 
 /// The ledger, or a refusal to pretend.

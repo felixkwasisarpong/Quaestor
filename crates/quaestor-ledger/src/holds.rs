@@ -209,6 +209,14 @@ impl Store {
             }
         }
 
+        // The account row is locked, every window has been checked, and
+        // nothing has been written. A crash here must leave no trace: the
+        // transaction is open and uncommitted, so Postgres rolls it back
+        // when the connection dies. If a partial hold ever survives this,
+        // the reservation is not one transaction and this crate's whole
+        // correctness argument is wrong.
+        crate::chaos::at("ledger.mid_transaction");
+
         // 5. Every window is satisfied. Write the hold.
         let expires_at = now
             .as_millis()

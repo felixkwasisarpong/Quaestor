@@ -1,0 +1,29 @@
+[package]
+name = "quaestor-chaos"
+description = "Crash the process on purpose, then check what survived."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Pulls in a Postgres client so the harness can read the holds table with its
+# own SQL. The crash points themselves need none of this, which is why the
+# mechanism and the checker are separable.
+postgres = ["dep:postgres"]
+
+[dependencies]
+quaestor-core = { path = "../quaestor-core" }
+quaestor-policy = { path = "../quaestor-policy" }
+quaestor-receipt = { path = "../quaestor-receipt" }
+
+ed25519-dalek = "2"
+serde_json = { workspace = true }
+postgres = { version = "0.19", optional = true }

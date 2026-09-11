@@ -64,15 +64,18 @@
 )]
 
 pub mod challenge;
+pub(crate) mod chaos;
 pub mod gateway;
 pub mod holds;
 pub mod http;
 pub mod identity;
+pub mod sink;
 
 pub use challenge::{Challenge, ChallengeKey, ChallengeStore, MAX_ALTERNATIVES};
 pub use gateway::{Config, Gateway, Outcome, Reach, Refusal, RefusalKind};
 pub use holds::{Holds, HoldsError, InMemoryHolds, PostgresHolds, ReserveRequest};
 pub use identity::{Caller, Identities};
+pub use sink::{FailingSink, JsonLinesSink, MemorySink, ReceiptSink, SinkError};
 
 /// The header an agent presents its payment in. x402, verbatim.
 pub const PAYMENT_HEADER: &str = "x-payment";
