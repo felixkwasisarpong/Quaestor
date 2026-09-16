@@ -798,6 +798,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "quaestor-playground"
+version = "0.0.1"
+dependencies = [
+ "quaestor-core",
+ "quaestor-policy",
+ "quaestor-verify",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "quaestor-policy"
 version = "0.0.1"
 dependencies = [

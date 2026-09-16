@@ -41,3 +41,22 @@ jobs:
         run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+
+      # The generated page is committed, because it is the file people open.
+      # This is the guard against it drifting from the template it came from.
+      - name: Playground is not stale
+        run: python3 scripts/check_playground.py
+
+  playground:
+    name: wasm builds and answers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: rustup target add wasm32-unknown-unknown
+      - name: Build
+        run: cargo build -p quaestor-playground --target wasm32-unknown-unknown --profile wasm-release
+      # Building is not evidence it works: the crate's own tests run on
+      # x86_64, and this is the only place the actual artifact is executed.
+      - name: The module answers
+        run: node scripts/smoke-playground.mjs target/wasm32-unknown-unknown/wasm-release/quaestor_playground.wasm

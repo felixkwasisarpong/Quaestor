@@ -8,6 +8,8 @@
 //! If you find yourself wanting to add a protocol-specific field here, that
 //! is the design failing. Put it in the adapter, or generalise it.
 
+use core::fmt;
+
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{AgentId, IdempotencyKey, IntentId, PayeeId, PrincipalId};
@@ -67,6 +69,16 @@ pub struct CallContext {
 /// That is what makes a decision replayable a year later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Timestamp(pub i64);
+
+impl fmt::Display for Timestamp {
+    /// Milliseconds, plain. Deliberately not a formatted date: this type is
+    /// a reading that was handed to a decision, and rendering it in some
+    /// local calendar would invite the reader to compare it against their
+    /// own clock, which is exactly what the evaluator is built not to do.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}ms", self.0)
+    }
+}
 
 impl Timestamp {
     pub const fn as_millis(&self) -> i64 {

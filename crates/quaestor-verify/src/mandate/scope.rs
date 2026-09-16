@@ -115,7 +115,7 @@ pub enum Widening {
     CategoriesWidened,
     #[error("rail restriction widened")]
     RailsWidened,
-    #[error("expiry extended from {parent:?} to {child:?}")]
+    #[error("expiry extended from {parent} to {child}")]
     ExpiryExtended { parent: Timestamp, child: Timestamp },
 }
 

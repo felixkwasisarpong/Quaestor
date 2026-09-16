@@ -18,9 +18,20 @@
 )]
 
 pub mod ap2;
-pub mod eip712;
-pub mod error;
 pub mod mandate;
+
+/// EIP-712 digests, x402 verification and the errors they raise.
+///
+/// Behind the `crypto` feature, which is on by default. Without it this
+/// crate is the attenuation algebra and the AP2 scope mapping, and it
+/// compiles anywhere — including `wasm32-unknown-unknown`, where the
+/// elliptic-curve crates do not.
+#[cfg(feature = "crypto")]
+pub mod eip712;
+#[cfg(feature = "crypto")]
+pub mod error;
+#[cfg(feature = "crypto")]
 pub mod x402;
 
+#[cfg(feature = "crypto")]
 pub use error::VerifyError;

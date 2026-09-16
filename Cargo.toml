@@ -34,3 +34,11 @@ thiserror = "2"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

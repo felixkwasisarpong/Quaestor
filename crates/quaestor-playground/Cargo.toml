@@ -1,0 +1,51 @@
+[package]
+name = "quaestor-playground"
+description = "The policy evaluator, compiled to WebAssembly, with no unsafe and no build tooling."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Not `workspace = true`, and the reason is narrow and worth stating.
+#
+# The workspace sets `unsafe_code = "forbid"`. `forbid` cannot be relaxed at
+# an item, and `#[no_mangle]` trips that lint — not because it is memory
+# unsafe, but because the linker cannot guarantee two libraries will not
+# export the same symbol. A WebAssembly export has to be named, so the
+# attribute is unavoidable.
+#
+# Every other rule is restated below, unchanged, so nothing else is quietly
+# loosened by opting out. `unsafe_code` becomes `deny`, allowed on exactly
+# the five export attributes and nowhere else, and a test asserts this crate
+# contains no `unsafe` block at all.
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+float_arithmetic = "deny"
+cast_possible_truncation = "deny"
+cast_sign_loss = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+
+[lib]
+# `cdylib` for the browser, `rlib` so the tests can drive the exports as the
+# page does rather than testing a second, friendlier interface nobody uses.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+quaestor-core = { path = "../quaestor-core" }
+# `default-features = false` on both: the browser gets the evaluator and the
+# attenuation rules, and none of the elliptic-curve code, which would not
+# compile for this target anyway.
+quaestor-policy = { path = "../quaestor-policy", default-features = false }
+quaestor-verify = { path = "../quaestor-verify", default-features = false }
+
+serde = { workspace = true }
+serde_json = { workspace = true }

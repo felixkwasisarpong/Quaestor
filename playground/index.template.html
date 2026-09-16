@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quaestor playground</title>
+<style>
+  :root {
+    --bg: #fbfaf8;  --panel: #ffffff;  --ink: #1b1a18;  --dim: #6b6660;
+    --line: #e4e0d9; --accent: #1b1a18;
+    --allow: #11663a; --allow-bg: #e8f5ee;
+    --deny: #9c2020;  --deny-bg: #fbeceb;
+    --esc: #8a5a06;   --esc-bg: #fdf3e2;
+    --code: #f4f1ec;
+  }
+  :root:not([data-theme="light"]) { }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #171614; --panel: #1e1d1a; --ink: #eceae6; --dim: #a39d95;
+      --line: #32302c; --accent: #eceae6;
+      --allow: #6ddc9f; --allow-bg: #12291d;
+      --deny: #f4948c;  --deny-bg: #2c1817;
+      --esc: #e8bd6d;   --esc-bg: #2b2114;
+      --code: #131210;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #171614; --panel: #1e1d1a; --ink: #eceae6; --dim: #a39d95;
+    --line: #32302c; --accent: #eceae6;
+    --allow: #6ddc9f; --allow-bg: #12291d;
+    --deny: #f4948c;  --deny-bg: #2c1817;
+    --esc: #e8bd6d;   --esc-bg: #2b2114;
+    --code: #131210;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding-block: 34px 72px; padding-left: 20px; padding-right: 20px; }
+
+  header { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 24px; }
+  h1 { font-size: 25px; margin: 0 0 6px; letter-spacing: -0.02em; font-weight: 640; }
+  .lede { color: var(--dim); margin: 0; max-width: 62ch; }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  .tabs { display: flex; gap: 6px; margin: 22px 0 18px; flex-wrap: wrap; }
+  .tab {
+    border: 1px solid var(--line); background: transparent; color: var(--dim);
+    padding: 7px 14px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 13.5px;
+  }
+  .tab[aria-selected="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+  .cols { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 20px; align-items: start; }
+  @media (max-width: 820px) { .cols { grid-template-columns: minmax(0,1fr); } }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--dim);
+             margin: 0 0 14px; font-weight: 640; }
+
+  label { display: block; font-size: 12.5px; color: var(--dim); margin: 0 0 5px; }
+  input, textarea, select {
+    width: 100%; background: var(--code); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px;
+    font: inherit; font-size: 13.5px;
+  }
+  textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px;
+             line-height: 1.5; resize: vertical; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .field { margin-bottom: 12px; }
+  .hint { font-size: 12px; color: var(--dim); margin-top: 5px; }
+
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .preset {
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    padding: 5px 11px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 12.5px;
+  }
+  .preset:hover { border-color: var(--ink); }
+
+  .verdict { border-radius: 12px; padding: 18px; border: 1px solid transparent; }
+  .verdict .tag { font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; }
+  .verdict .big { font-size: 19px; font-weight: 640; margin: 6px 0 0; letter-spacing: -0.01em; }
+  .v-allow    { background: var(--allow-bg); border-color: var(--allow); color: var(--allow); }
+  .v-deny     { background: var(--deny-bg);  border-color: var(--deny);  color: var(--deny); }
+  .v-escalate { background: var(--esc-bg);   border-color: var(--esc);   color: var(--esc); }
+  .v-error    { background: var(--code); border-color: var(--line); color: var(--ink); }
+
+  ul.reasons { list-style: none; padding: 0; margin: 16px 0 0; }
+  ul.reasons li { border-top: 1px solid var(--line); padding: 11px 0; }
+  ul.reasons .what { font-size: 13.5px; }
+  ul.reasons .detail {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px; color: var(--dim); margin-top: 3px;
+    overflow-wrap: anywhere;
+  }
+  .meta { margin-top: 16px; font-size: 12px; color: var(--dim); }
+  .meta code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; word-break: break-all; }
+
+  .note { font-size: 13px; color: var(--dim); border-left: 2px solid var(--line); padding-left: 12px; margin-top: 16px; }
+  .note b { color: var(--ink); font-weight: 600; }
+  footer { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line);
+           font-size: 12.5px; color: var(--dim); }
+  footer a { color: var(--ink); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Quaestor</h1>
+  <p class="lede">
+    The spend firewall for AI agents. This page runs the real policy evaluator,
+    compiled to WebAssembly. <b>Three verdicts, not two</b>, and every reason,
+    not just the first one it found.
+  </p>
+</header>
+
+<div class="tabs" role="tablist">
+  <button class="tab" role="tab" id="tab-evaluate" aria-selected="true">Evaluate a payment</button>
+  <button class="tab" role="tab" id="tab-attenuate" aria-selected="false">Delegate authority</button>
+</div>
+
+<!-- ------------------------------------------------------------------ -->
+<section id="panel-evaluate">
+<div class="presets">
+  <button class="preset" data-preset="allow">A small familiar payment</button>
+  <button class="preset" data-preset="escalate">Above the unattended limit</button>
+  <button class="preset" data-preset="budget">Over the daily budget</button>
+  <button class="preset" data-preset="blocked">A blocked payee</button>
+  <button class="preset" data-preset="unknown">No spend figure</button>
+  <button class="preset" data-preset="scope">Outside the mandate</button>
+</div>
+
+<div class="cols">
+  <div class="card">
+    <h2>The rules</h2>
+    <div class="field">
+      <label for="policy">Policy file</label>
+      <textarea id="policy" rows="22" spellcheck="false"></textarea>
+    </div>
+
+  </div>
+
+  <div class="card">
+    <h2>The payment</h2>
+    <div class="row">
+      <div>
+        <label for="p-amount">Amount</label>
+        <input id="p-amount" value="1.000000">
+      </div>
+      <div>
+        <label for="p-payee">Payee</label>
+        <input id="p-payee" value="shop.example">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="p-category">Category</label>
+        <input id="p-category" placeholder="optional">
+      </div>
+      <div>
+        <label for="p-rail">Rail</label>
+        <select id="p-rail">
+          <option>x402</option><option>ap2</option><option>acp</option>
+          <option>mpp</option><option>ucp</option><option>card</option>
+        </select>
+      </div>
+    </div>
+
+    <h2 style="margin-top:22px">What has been spent</h2>
+    <div class="row">
+      <div>
+        <label for="s-24h">In the 24h window</label>
+        <input id="s-24h" value="0.000000" placeholder="blank means unknown">
+      </div>
+      <div>
+        <label for="s-30d">In the 30d window</label>
+        <input id="s-30d" value="0.000000" placeholder="blank means unknown">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="s-velocity">Payments already made</label>
+        <input id="s-velocity" value="0">
+      </div>
+      <div>
+        <label for="s-seen">Paid this payee before</label>
+        <select id="s-seen"><option value="yes">yes</option><option value="no">no</option></select>
+      </div>
+    </div>
+    <p class="hint">
+      Clear a spend box and the verdict changes. A budget the system cannot read
+      is a budget it cannot honour, so the safe answer to <em>I do not know</em> is no.
+    </p>
+
+    <h2 style="margin-top:22px">Delegated authority</h2>
+    <div class="row">
+      <div>
+        <label for="a-max">Ceiling on one payment</label>
+        <input id="a-max" value="50.000000">
+      </div>
+      <div>
+        <label for="a-payees">Permitted payees</label>
+        <input id="a-payees" placeholder="blank means no restriction">
+      </div>
+    </div>
+    <p class="hint">
+      Blank is <em>no restriction</em>. A list is <em>exactly these</em>. Those are
+      different grants, and the difference is the whole of the next tab.
+    </p>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px">
+  <h2>Verdict</h2>
+  <div id="verdict" class="verdict v-allow">
+    <div class="tag">—</div>
+    <p class="big">—</p>
+  </div>
+  <ul class="reasons" id="reasons"></ul>
+  <div class="meta" id="meta"></div>
+</div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<section id="panel-attenuate" hidden>
+<div class="presets">
+  <button class="preset" data-att="honest">An honest narrowing</button>
+  <button class="preset" data-att="drop">Drop the payee restriction</button>
+  <button class="preset" data-att="raise">Raise the ceiling</button>
+  <button class="preset" data-att="later">Extend the expiry</button>
+</div>
+
+<div class="cols">
+  <div class="card">
+    <h2>What the parent holds</h2>
+    <div class="field">
+      <label for="pa-max">Ceiling on one payment</label>
+      <input id="pa-max" value="50.000000">
+    </div>
+    <div class="field">
+      <label for="pa-payees">Permitted payees</label>
+      <input id="pa-payees" value="a.example, b.example">
+    </div>
+    <div class="field">
+      <label for="pa-until">Expires (ms since epoch)</label>
+      <input id="pa-until" value="4000000000000">
+    </div>
+  </div>
+  <div class="card">
+    <h2>What the child claims</h2>
+    <div class="field">
+      <label for="ch-max">Ceiling on one payment</label>
+      <input id="ch-max" value="10.000000">
+    </div>
+    <div class="field">
+      <label for="ch-payees">Permitted payees</label>
+      <input id="ch-payees" value="a.example">
+    </div>
+    <div class="field">
+      <label for="ch-until">Expires (ms since epoch)</label>
+      <input id="ch-until" value="3000000000000">
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px">
+  <h2>Is the child contained by the parent</h2>
+  <div id="att-verdict" class="verdict v-allow">
+    <div class="tag">—</div>
+    <p class="big">—</p>
+  </div>
+  <p class="note">
+    <b>Clear the child's payee list and watch it be refused.</b> Comparing the
+    listed values sees an empty difference and calls that narrower, which is
+    how a sub-agent removes a restriction and quietly gains the whole world.
+    <em>No restriction</em> is strictly wider than <em>these two</em>, including
+    a list of everything known today, because everything known today and
+    whatever exists tomorrow are different grants.
+  </p>
+</div>
+</section>
+
+<footer>
+  The evaluator here is the same code that runs in the proxy: no clock, no
+  network, no randomness, which is why it can run in your browser at all.
+  Signature checking, budgets that survive a restart and the receipt log need a
+  database and sockets, and are not in this page.
+  <br><br>
+  Nothing you type leaves your machine. There is no server.
+</footer>
+
+</div>
+
+<script>
+// --------------------------------------------------------------------------
+// The module, inlined as base64 so this page is one file with no fetches and
+// no origin. It runs from file://, from a static host, or from a USB stick.
+// --------------------------------------------------------------------------
+const WASM_B64 = "__WASM_BASE64__";
+
+function bytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+let wasm = null;
+
+// Bytes cross one at a time. The module exports no allocator, because
+// exporting one would have meant writing unsafe Rust, and the point of the
+// project is that it does not contain any.
+function call(request) {
+  if (!wasm) return { error: "the module is still loading" };
+  const encoded = new TextEncoder().encode(JSON.stringify(request));
+  wasm.reset();
+  for (const b of encoded) wasm.push(b);
+  const len = wasm.run();
+  const out = new Uint8Array(len);
+  for (let i = 0; i < len; i++) out[i] = wasm.out(i);
+  try { return JSON.parse(new TextDecoder().decode(out)); }
+  catch (e) { return { error: String(e) }; }
+}
+
+const $ = (id) => document.getElementById(id);
+const list = (s) => {
+  const t = s.trim();
+  if (t === "") return null;                 // no restriction
+  return t.split(",").map(x => x.trim()).filter(x => x.length);
+};
+
+const DEFAULT_POLICY = `version = 1
+currency = "USDC"
+
+[defaults]
+unattended_limit = "2.000000 USDC"
+escalate_first_seen_payee = true
+escalate_above_remaining_percent = 50
+
+[[budgets]]
+window = "24h"
+limit = "5.000000 USDC"
+
+[[budgets]]
+window = "30d"
+limit = "100.000000 USDC"
+
+[velocity]
+max_payments = 20
+window = "1h"
+
+[payees]
+deny = ["blocked.example"]
+`;
+
+// ---- evaluate -------------------------------------------------------------
+
+function buildEvaluate() {
+  const spent = {};
+  if ($("s-24h").value.trim()) spent["24h"] = $("s-24h").value.trim();
+  if ($("s-30d").value.trim()) spent["30d"] = $("s-30d").value.trim();
+  return {
+    op: "evaluate",
+    policy: $("policy").value,
+    authority: {
+      max_amount: $("a-max").value.trim(),
+      payees: list($("a-payees").value),
+      not_after_ms: 4000000000000,
+    },
+    payment: {
+      amount: $("p-amount").value.trim(),
+      payee: $("p-payee").value.trim(),
+      category: $("p-category").value.trim() || null,
+      rail: $("p-rail").value,
+    },
+    state: {
+      spent,
+      velocity: parseInt($("s-velocity").value, 10) || 0,
+      payee_seen: $("s-seen").value === "yes",
+    },
+    now_ms: 1772000000000,
+  };
+}
+
+const READABLE = {
+  budget_exceeded: "A cap would be breached",
+  velocity_exceeded: "Too many payments too quickly",
+  payee_blocked: "This payee is blocked outright",
+  category_blocked: "This category is blocked outright",
+  state_unavailable: "A rule could not be evaluated",
+  rail_not_permitted: "This rail is not permitted",
+  scope_widened: "Outside what the mandate granted",
+  mandate_expired: "The mandate has expired",
+  mandate_missing: "A mandate is required",
+  bad_signature: "The mandate signature did not verify",
+  approval_denied: "A human said no",
+  approval_expired: "Nobody answered",
+  malformed_intent: "The payment is malformed",
+  first_seen_payee: "This payee has not been paid before",
+  large_share_of_budget: "This is most of what is left",
+  above_unattended_limit: "Above the amount this agent may spend unattended",
+  policy_requires_approval: "A policy rule always asks",
+};
+
+// Money arrives as { currency: { code, exponent }, minor: "3000000" }, with
+// `minor` a *string* on purpose: above 2^53 a JSON number is a double and
+// rounds silently, which at USDC's six decimals starts at about nine billion
+// dollars. So this formats by moving a decimal point through a string and
+// never once calls Number(). Same reason as BUGS.md #001.
+function money(m) {
+  if (!m || typeof m !== "object" || !("minor" in m)) return null;
+  const exp = (m.currency && m.currency.exponent) || 0;
+  const code = (m.currency && m.currency.code) || "";
+  let digits = String(m.minor);
+  const negative = digits.startsWith("-");
+  if (negative) digits = digits.slice(1);
+  if (exp > 0) {
+    digits = digits.padStart(exp + 1, "0");
+    digits = digits.slice(0, digits.length - exp) + "." + digits.slice(digits.length - exp);
+  }
+  return (negative ? "-" : "") + digits + " " + code;
+}
+
+function duration(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n)) return String(ms);
+  if (n % 86400000 === 0) return (n / 86400000) + "d";
+  if (n % 3600000 === 0) return (n / 3600000) + "h";
+  if (n % 60000 === 0) return (n / 60000) + "m";
+  return n + "ms";
+}
+
+const FIELD = {
+  limit: "limit", attempted: "attempted", remaining: "left",
+  limit_per_window: "at most", window_ms: "per", detail: "",
+  expired_at: "expired at", category: "category", rule: "rule",
+};
+
+function detailOf(reason) {
+  const parts = [];
+  for (const [key, value] of Object.entries(reason)) {
+    if (key === "code") continue;
+    const name = FIELD[key] === undefined ? key : FIELD[key];
+    let shown;
+    const asMoney = money(value);
+    if (asMoney !== null) shown = asMoney;
+    else if (key === "window_ms") shown = duration(value);
+    else if (typeof value === "object") shown = JSON.stringify(value);
+    else shown = String(value);
+    parts.push(name ? `${name} ${shown}` : shown);
+  }
+  return parts.join("   ·   ");
+}
+
+function renderEvaluate() {
+  const r = call(buildEvaluate());
+  const box = $("verdict"), reasons = $("reasons"), meta = $("meta");
+  reasons.innerHTML = ""; meta.textContent = "";
+
+  if (r.error) {
+    box.className = "verdict v-error";
+    box.querySelector(".tag").textContent = "cannot decide";
+    box.querySelector(".big").textContent = r.error;
+    return;
+  }
+
+  const v = r.verdict.verdict;
+  box.className = "verdict v-" + v;
+  box.querySelector(".tag").textContent =
+    v === "allow" ? "allow" : v === "deny" ? "deny" : "escalate";
+  box.querySelector(".big").textContent = r.summary;
+
+  for (const reason of (r.verdict.reasons || [])) {
+    const li = document.createElement("li");
+    const what = document.createElement("div");
+    what.className = "what";
+    what.textContent = READABLE[reason.code] || reason.code;
+    li.append(what);
+    const detail = detailOf(reason);
+    if (detail) {
+      const d = document.createElement("div");
+      d.className = "detail";
+      d.textContent = detail;
+      li.append(d);
+    }
+    reasons.append(li);
+  }
+
+  const bits = [];
+  if (r.verdict.reasons && r.verdict.reasons.length > 1) {
+    bits.push(`${r.verdict.reasons.length} reasons, because every check runs and none of them short-circuits.`);
+  }
+  if (r.windows_without_a_figure && r.windows_without_a_figure.length) {
+    bits.push(`No spend figure for: ${r.windows_without_a_figure.join(", ")}.`);
+  }
+  if (r.labels_not_in_the_policy && r.labels_not_in_the_policy.length) {
+    bits.push(`Ignored, not a window in this policy: ${r.labels_not_in_the_policy.join(", ")}.`);
+  }
+  meta.innerHTML = bits.join(" ") +
+    `<br>Decided against policy <code>${r.policy_version ? r.policy_version.slice(0, 16) : "?"}…</code>`;
+}
+
+const PRESETS = {
+  allow:    { amount: "1.000000", payee: "shop.example",    s24: "0.000000", seen: "yes", payees: "" },
+  escalate: { amount: "3.000000", payee: "shop.example",    s24: "0.000000", seen: "yes", payees: "" },
+  budget:   { amount: "4.000000", payee: "shop.example",    s24: "2.000000", seen: "yes", payees: "" },
+  blocked:  { amount: "1.000000", payee: "blocked.example", s24: "0.000000", seen: "yes", payees: "" },
+  unknown:  { amount: "1.000000", payee: "shop.example",    s24: "",         seen: "yes", payees: "" },
+  scope:    { amount: "1.000000", payee: "shop.example",    s24: "0.000000", seen: "yes", payees: "someone.else" },
+};
+
+// ---- attenuate ------------------------------------------------------------
+
+function renderAttenuate() {
+  const scope = (m, p, u) => ({
+    max_amount: $(m).value.trim(),
+    payees: list($(p).value),
+    not_after_ms: parseInt($(u).value, 10) || 0,
+  });
+  const r = call({
+    op: "attenuate",
+    currency: "USDC",
+    parent: scope("pa-max", "pa-payees", "pa-until"),
+    child: scope("ch-max", "ch-payees", "ch-until"),
+  });
+
+  const box = $("att-verdict");
+  if (r.error) {
+    box.className = "verdict v-error";
+    box.querySelector(".tag").textContent = "cannot decide";
+    box.querySelector(".big").textContent = r.error;
+    return;
+  }
+  box.className = "verdict " + (r.within ? "v-allow" : "v-deny");
+  box.querySelector(".tag").textContent = r.within ? "legal delegation" : "refused as widening";
+  box.querySelector(".big").textContent = r.summary;
+}
+
+const ATT = {
+  honest: { pm: "50.000000", pp: "a.example, b.example", pu: "4000000000000",
+            cm: "10.000000", cp: "a.example",            cu: "3000000000000" },
+  drop:   { pm: "50.000000", pp: "a.example, b.example", pu: "4000000000000",
+            cm: "10.000000", cp: "",                     cu: "3000000000000" },
+  raise:  { pm: "50.000000", pp: "a.example, b.example", pu: "4000000000000",
+            cm: "500.000000", cp: "a.example",           cu: "3000000000000" },
+  later:  { pm: "50.000000", pp: "a.example, b.example", pu: "4000000000000",
+            cm: "10.000000", cp: "a.example",            cu: "9000000000000" },
+};
+
+// ---- wiring ---------------------------------------------------------------
+
+function selectTab(which) {
+  const ev = which === "evaluate";
+  $("tab-evaluate").setAttribute("aria-selected", String(ev));
+  $("tab-attenuate").setAttribute("aria-selected", String(!ev));
+  $("panel-evaluate").hidden = !ev;
+  $("panel-attenuate").hidden = ev;
+}
+
+$("tab-evaluate").onclick = () => selectTab("evaluate");
+$("tab-attenuate").onclick = () => selectTab("attenuate");
+
+for (const b of document.querySelectorAll("[data-preset]")) {
+  b.onclick = () => {
+    const p = PRESETS[b.dataset.preset];
+    $("p-amount").value = p.amount; $("p-payee").value = p.payee;
+    $("s-24h").value = p.s24; $("s-30d").value = "0.000000";
+    $("s-seen").value = p.seen; $("a-payees").value = p.payees;
+    $("p-category").value = "";
+    renderEvaluate();
+  };
+}
+for (const b of document.querySelectorAll("[data-att]")) {
+  b.onclick = () => {
+    const a = ATT[b.dataset.att];
+    $("pa-max").value = a.pm; $("pa-payees").value = a.pp; $("pa-until").value = a.pu;
+    $("ch-max").value = a.cm; $("ch-payees").value = a.cp; $("ch-until").value = a.cu;
+    renderAttenuate();
+  };
+}
+
+for (const id of ["policy","a-max","a-payees","p-amount","p-payee","p-category","p-rail",
+                  "s-24h","s-30d","s-velocity","s-seen"]) {
+  $(id).addEventListener("input", renderEvaluate);
+  $(id).addEventListener("change", renderEvaluate);
+}
+for (const id of ["pa-max","pa-payees","pa-until","ch-max","ch-payees","ch-until"]) {
+  $(id).addEventListener("input", renderAttenuate);
+}
+
+$("policy").value = DEFAULT_POLICY;
+
+WebAssembly.instantiate(bytes(WASM_B64), {}).then(({ instance }) => {
+  wasm = instance.exports;
+  renderEvaluate();
+  renderAttenuate();
+}).catch((e) => {
+  $("verdict").className = "verdict v-error";
+  $("verdict").querySelector(".tag").textContent = "failed to load";
+  $("verdict").querySelector(".big").textContent = String(e);
+});
+</script>
+</body>
+</html>

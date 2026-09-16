@@ -11,15 +11,27 @@ authors.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["crypto"]
+# Signature verification: x402 payloads, EIP-712 digests, and the Ed25519 on
+# delegation chains.
+#
+# Optional because the attenuation algebra in `mandate::scope` is a pure
+# type with no cryptography in it at all, and dragging two elliptic-curve
+# implementations in to use it is a poor trade — most visibly for
+# WebAssembly, where those crates pull `getrandom`, which does not build for
+# `wasm32-unknown-unknown` without a JavaScript shim.
+crypto = ["dep:k256", "dep:sha3", "dep:subtle", "dep:ed25519-dalek"]
+
 [dependencies]
 quaestor-core = { path = "../quaestor-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
-sha3 = { version = "0.10", default-features = false, features = ["std"] }
-subtle = "2.6"
-ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core"] }
+k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"], optional = true }
+sha3 = { version = "0.10", default-features = false, features = ["std"], optional = true }
+subtle = { version = "2.6", optional = true }
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core"], optional = true }
 
 [dev-dependencies]
 rand_core = { version = "0.6", features = ["getrandom"] }

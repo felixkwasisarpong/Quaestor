@@ -11,9 +11,16 @@ authors.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["crypto"]
+# The evaluator itself uses no cryptography: it takes an already-verified
+# `Scope` as an argument. This only forwards the feature so a caller that
+# wants the pure half can have it.
+crypto = ["quaestor-verify/crypto"]
+
 [dependencies]
 quaestor-core = { path = "../quaestor-core" }
-quaestor-verify = { path = "../quaestor-verify" }
+quaestor-verify = { path = "../quaestor-verify", default-features = false }
 serde = { workspace = true }
 thiserror = { workspace = true }
 toml = "0.8"

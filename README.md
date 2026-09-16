@@ -4,7 +4,7 @@
 through Quaestor, which verifies the authorization behind it, enforces the
 budget, and signs a receipt for the decision — before a cent moves.
 
-> Status: **pre-alpha, day 20 of 28.** Every layer is built and tested and
+> Status: **pre-alpha, day 22 of 28.** Every layer is built and tested and
 > the proxy runs. Not yet used in front of real money by anyone, including
 > me. [`BUGS.md`](BUGS.md) is the honest record of what has broken so far.
 
@@ -56,6 +56,7 @@ resolves to `Deny` — never to `Allow`.
 | `quaestor-receipt` | ✅ signed, hash-chained receipts + offline verifier CLI |
 | `quaestor-proxy` | ✅ inline HTTP gateway; refused payments are not forwarded |
 | `quaestor-chaos` | ✅ crash injection at 8 points, with invariants checked after restart |
+| `quaestor-playground` | ✅ the evaluator in a browser, one HTML file, no server |
 
 ```bash
 ./scripts/check.sh   # exactly what CI runs: fmt, clippy, test, doc
@@ -100,6 +101,33 @@ The payment is checked against the `402` **the origin issued**, never the
 copy of it the agent enclosed. Skipping that is how a correct verifier ends
 up certifying that the agent agrees with itself; see [`BUGS.md`](BUGS.md)
 #003 for the underlying attack.
+
+## Try it without installing anything
+
+[`playground/index.html`](playground/index.html) is one file. Open it and the
+real policy evaluator runs in your browser: paste a policy, describe a
+payment, watch allow, deny or escalate with every reason it found rather than
+the first.
+
+The second tab is the more interesting one. Give a sub-agent a mandate,
+remove the payee restriction from it, and watch the delegation refused as
+*widening* — the mistake that lets an agent quietly gain the whole world by
+appearing to ask for less.
+
+```bash
+./scripts/build-playground.sh   # cargo + base64. no wasm-pack, no npm.
+```
+
+Only this layer runs there, and that is not a compromise. The evaluator reads
+no clock, opens no socket and draws no randomness, because a decision has to
+be replayable a year later; the side effect is that it is the one layer a
+browser can run unchanged. Signature checking, budgets that survive a restart
+and the receipt log need Postgres, sockets and a filesystem, and were never
+going to be in a web page.
+
+The module is inlined as base64, so the page has no origin and makes no
+requests. Nothing typed into it leaves the machine, and that is a property of
+the file rather than a promise printed on it.
 
 ## Design notes
 
