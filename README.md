@@ -4,7 +4,7 @@
 through Quaestor, which verifies the authorization behind it, enforces the
 budget, and signs a receipt for the decision — before a cent moves.
 
-> Status: **pre-alpha, day 22 of 28.** Every layer is built and tested and
+> Status: **pre-alpha, day 25 of 28.** Every layer is built and tested and
 > the proxy runs. Not yet used in front of real money by anyone, including
 > me. [`BUGS.md`](BUGS.md) is the honest record of what has broken so far.
 
@@ -58,6 +58,39 @@ resolves to `Deny` — never to `Allow`.
 | `quaestor-chaos` | ✅ crash injection at 8 points, with invariants checked after restart |
 | `quaestor-playground` | ✅ the evaluator in a browser, one HTML file, no server |
 
+## Sixty seconds
+
+Nothing to install but a Rust toolchain, and no database needed for this.
+
+```bash
+git clone https://github.com/felixkwasisarpong/Quaestor && cd Quaestor
+
+# 1. Watch a decision get signed, then watch a tampered log get caught.
+cargo run -p quaestor-receipt --example emit > receipts.jsonl
+#    ^ prints the public key on stderr. Copy it.
+
+cargo run -p quaestor-receipt --bin quaestor-verify-receipts -- \
+  --key <that key> receipts.jsonl
+
+sed '2d' receipts.jsonl > doctored.jsonl     # delete the denial
+cargo run -p quaestor-receipt --bin quaestor-verify-receipts -- \
+  --key <that key> doctored.jsonl            # and watch it refuse
+```
+
+```
+OK  3 receipts verified
+    1 allowed, 1 denied, 1 escalated
+    head 84756437fd995a3530ac8d2bede64f119f146ddca14a94ce0f8c87b34e69db52
+
+FAILED  receipt 2: prev_hash does not match the receipt before it
+This log is not trustworthy. Do not rely on it.
+```
+
+Every receipt in the doctored file still passes its own signature check. The
+signatures were never the thing that caught it.
+
+## Running the tests
+
 ```bash
 ./scripts/check.sh   # exactly what CI runs: fmt, clippy, test, doc
 
@@ -80,12 +113,18 @@ Everything above is a library, and a library only runs if something calls it.
 client at it and a refused payment is not forwarded.
 
 ```bash
+cargo install --path crates/quaestor-proxy    # or use `cargo run -p` below
+
 export QUAESTOR_RECEIPT_KEY=$(openssl rand -hex 32)
 export QUAESTOR_TOKEN_SHOPPER=$(openssl rand -hex 24)
 quaestor-proxy --config examples/quaestor.toml
 
 http_proxy=http://127.0.0.1:8402 your-agent
 ```
+
+The example config sets `allow_volatile_ledger`, which keeps budgets in
+memory so you can try it without a database. It says so on startup, loudly,
+because a budget that a restart forgets is not a budget.
 
 ```
 agent ──▶ GET /report ─────────────────────▶ origin
@@ -104,10 +143,14 @@ up certifying that the agent agrees with itself; see [`BUGS.md`](BUGS.md)
 
 ## Try it without installing anything
 
-[`playground/index.html`](playground/index.html) is one file. Open it and the
-real policy evaluator runs in your browser: paste a policy, describe a
-payment, watch allow, deny or escalate with every reason it found rather than
-the first.
+**[felixkwasisarpong.github.io/Quaestor](https://felixkwasisarpong.github.io/Quaestor)**
+is one file. Open it and the real policy evaluator runs in your browser:
+paste a policy, describe a payment, watch allow, deny or escalate with every
+reason it found rather than the first.
+
+(Opening [`playground/index.html`](playground/index.html) on github.com shows
+you the source, which is mostly a base64 blob. Use the link above, or
+download the file and open it locally. It needs no server either way.)
 
 The second tab is the more interesting one. Give a sub-agent a mandate,
 remove the payee restriction from it, and watch the delegation refused as

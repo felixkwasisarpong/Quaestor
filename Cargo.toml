@@ -7,7 +7,7 @@ version = "0.0.1"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
-repository = "https://github.com/felixsarpong/quaestor"
+repository = "https://github.com/felixkwasisarpong/Quaestor"
 authors = ["Felix Sarpong"]
 
 [workspace.lints.rust]

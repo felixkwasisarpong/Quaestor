@@ -1,0 +1,51 @@
+name: playground
+
+# Publishes the playground to GitHub Pages.
+#
+# Without this, the link in the README goes to a file view on github.com and
+# a visitor gets six hundred kilobytes of base64 instead of the page. The
+# single most clickable thing in the repository would be the least readable.
+#
+# One-time setup: Settings → Pages → Source → GitHub Actions.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a half-finished deploy; let it land, then run the next one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The committed page is the one that ships. This is the same check CI
+      # runs, repeated here so a stale page cannot be published even if
+      # someone merges past a red build.
+      - name: Page matches its template
+        run: python3 scripts/check_playground.py
+
+      - name: Stage
+        run: |
+          mkdir -p _site
+          cp playground/index.html _site/index.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4

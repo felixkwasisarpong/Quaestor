@@ -5,3 +5,7 @@
 .env
 .env.*
 !.env.example
+
+# A local run of the proxy writes its receipt log here.
+receipts.jsonl
+doctored.jsonl

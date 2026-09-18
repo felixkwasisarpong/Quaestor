@@ -10,6 +10,10 @@ use quaestor_receipt::Signer;
 
 fn main() {
     let mut s = Signer::new(SigningKey::from_bytes(&[7u8; 32]));
+    // Labelled, and on stderr so that `> receipts.jsonl` still produces a
+    // clean log. A bare 64-character string appearing on a terminal with no
+    // explanation is not a usable instruction.
+    eprintln!("public key (pass this to --key):");
     eprintln!("{}", hex(&s.public_key()));
     let now = Timestamp(1_772_000_000_000);
     let usd = |m| Money::new(m, Currency::USD);
