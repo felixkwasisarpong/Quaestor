@@ -4,9 +4,13 @@
 through Quaestor, which verifies the authorization behind it, enforces the
 budget, and signs a receipt for the decision — before a cent moves.
 
-> Status: **pre-alpha, day 25 of 28.** Every layer is built and tested and
-> the proxy runs. Not yet used in front of real money by anyone, including
-> me. [`BUGS.md`](BUGS.md) is the honest record of what has broken so far.
+**[Try it in your browser](https://felixkwasisarpong.github.io/Quaestor)** ·
+[Sixty seconds from a clone](#sixty-seconds) ·
+[Everything that has broken so far](BUGS.md)
+
+> Status: **pre-alpha.** Everything marked built below is built and tested,
+> and the proxy runs. Nobody has put it in front of real money yet, including
+> me. [`BUGS.md`](BUGS.md) is the honest record of what has gone wrong.
 
 ---
 
@@ -16,9 +20,14 @@ Five protocols now define how an autonomous agent sends money — [x402],
 [UCP], [AP2], [ACP] and [MPP]. Every one of them answers *how an agent
 pays*. None answers *how you stop it paying the wrong thing*.
 
+(Quaestor verifies x402 today and maps AP2 Intent Mandates onto its own
+scopes. The other three are next, and each is an adapter at L0 rather than a
+change to anything above it.)
+
 Generic policy engines don't fill the gap: they have no money type, no
-rolling spend window, no merchant category, no authorization-capture-refund
-lifecycle, and only two verdicts when the case that matters needs three.
+rolling spend window, no hold-and-capture lifecycle, and nothing that stops
+two concurrent requests from both reading the same remaining budget. See
+[why not OPA or Cedar](#why-not-opa-or-cedar).
 Every working implementation of this layer today is closed and sold as
 managed cloud.
 
@@ -27,16 +36,21 @@ Quaestor is the open one, and it runs on your own infrastructure.
 ## How it works
 
 ```
-agent ──▶ L0 wire adapters      x402 · AP2 · … ──▶ canonical PaymentIntent
+agent ──▶ L0 wire adapters      x402 today; AP2 scopes ──▶ canonical PaymentIntent
           L1 mandate verify     signature, delegation chain, scope attenuation
           L2 policy             deterministic. budgets, caps, velocity
           L3 receipt            signed, hash-chained, verifiable offline
-          L4 ledger             holds, capture, refund
-          L5 reconcile          authorization vs. what actually settled
+          L4 ledger             holds, capture, release
+          L5 reconcile          not built. authorization vs. what settled
                     │
                     ▼
               allow · deny · escalate
 ```
+
+L5 is on the diagram because it belongs there, and marked because it does
+not exist yet. There is no refund path either: a captured spend is final,
+and correcting one is a double-entry problem this ledger does not solve.
+See the open questions at the bottom of [`BUGS.md`](BUGS.md).
 
 Only L0 knows what a blockchain is. Everything above it is rail-agnostic, so
 a sixth protocol costs an adapter rather than a rewrite.
@@ -174,7 +188,7 @@ the file rather than a promise printed on it.
 
 ## Design notes
 
-Two decisions worth knowing before you read the code.
+The decisions worth knowing before you read the code.
 
 **Money is an integer and its currency carries an exponent.** `USD` at two
 decimals and `USD` at six are *different currencies* here, and adding them
@@ -264,12 +278,25 @@ evaluator may not read the clock.
 
 ## Why not OPA or Cedar?
 
-They are good policy engines for the problem they solve, which is not this
-one. They have no money type, no currency-aware comparison, no rolling
-window, no merchant category, no notion of a hold, and two verdicts where
-this needs three. Encoding payment semantics into Rego means reimplementing
-all of that in a language that does not guarantee termination — more work
-than writing an evaluator that is correct by construction.
+They are good policy engines, and the reason not to use them here is not a
+missing language feature. It is that the hard part of a budget is not the
+rule.
+
+Both evaluate a request against data handed to them. Cedar reads only the
+request and the entities you pass in; OPA evaluates against the data it has
+loaded. That is the right design for authorization, and it is the exact
+shape of the bug a budget has to avoid. Two agents read the same snapshot,
+both are inside the cap, both are allowed, and together they are over it.
+No evaluator that answers from a photograph can fix that. It takes an atomic
+reserve against durable state, which is what `quaestor-ledger` is, and why
+it is tested by deleting its lock and watching a budget overspend
+([`BUGS.md`](BUGS.md) #012).
+
+The rest is real but smaller. Cedar returns exactly `Allow` or `Deny`, and
+the case that matters here needs a third answer meaning *ask a human, and
+refuse if nobody does*. OPA can return any document, so a third verdict is
+expressible there, but money, currency exponents and rolling windows are all
+things to build on top rather than types the evaluator understands.
 
 ## License
 

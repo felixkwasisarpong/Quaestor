@@ -497,6 +497,46 @@ That last one is `receipt.after_sign` in the harness.
 
 ---
 
+## 020 — The README was wrong about other people's software
+
+**Day 26. Found by:** reading the README cold, the way a hostile commenter
+would, and checking every claim it made about somebody else.
+
+Two claims about competitors, both stated with confidence, and one of them
+simply false.
+
+The comparison section said Rego is *a language that does not guarantee
+termination*. It is the opposite. Rego forbids recursion for exactly that
+reason, and OPA's own documentation says policy evaluation "should be known
+to *terminate*". Nobody checked, because it sounded like the kind of thing
+that is true about a policy language.
+
+It also said OPA and Cedar both have *two verdicts where this needs three*.
+Cedar does return exactly `Allow` or `Deny`. OPA returns any document you
+like, so a third verdict is expressible there. The claim was true of one
+engine and presented as true of both.
+
+And the architecture diagram, one screen further up, listed a *refund* path
+and a *reconcile* layer. Neither exists. The ledger has holds, capture and
+release; reconciliation was cut on day 3 and has no code at all.
+
+**Why this matters more than a code bug.** Every other entry in this file is
+a place the software was wrong. These are places the *documentation* was
+wrong, about the one thing a reader cannot check by running a test, on the
+page most likely to be read by the people who work on those projects. A
+wrong claim about someone else's software is corrected in public, by an
+expert, on launch day, and it costs the credibility of every true claim
+next to it.
+
+**Fix:** the diagram marks L5 as not built and says there is no refund. The
+comparison was rewritten using only what could be verified against each
+project's documentation, and it came out stronger: both engines evaluate
+against a snapshot of data handed to them, which is precisely the shape of
+the budget race the ledger exists to close. The better argument had been
+there all along and was hidden behind a worse one that happened to be false.
+
+---
+
 ## What the harness found, and what it confirmed
 
 All eight crash points behave as written down beforehand. The three bugs
