@@ -1,3 +1,17 @@
+# Pinned, not "stable".
+#
+# This file said `channel = "stable"` for three weeks, which meant the CI
+# runner silently moved to a newer compiler than any developer had. rustc
+# 1.98 shipped on 1 September with a new `clippy::question_mark` lint, CI
+# went red on 3 September, and `scripts/check.sh` kept printing "all green"
+# locally on 1.95 for nineteen days. See BUGS.md #021.
+#
+# An exact version means the build is reproducible and a toolchain upgrade is
+# a commit somebody reviewed, rather than something that happens to the
+# project overnight.
+#
+# Not to be confused with `rust-version` in Cargo.toml, which is the minimum
+# a consumer of these crates needs. This is what CI and developers use.
 [toolchain]
-channel = "stable"
+channel = "1.98.1"
 components = ["rustfmt", "clippy"]

@@ -175,13 +175,14 @@ impl ChallengeStore {
     /// in both cases and a distinction that changes nothing is a distinction
     /// somebody eventually handles wrongly.
     pub fn get(&mut self, key: &ChallengeKey, now: Timestamp) -> Option<&Challenge> {
-        let stale = match self.by_key.get(key) {
-            None => return None,
-            Some(c) => now
-                .as_millis()
-                .checked_sub(c.seen_at.as_millis())
-                .is_none_or(|age| age > self.ttl_ms),
-        };
+        let held = self.by_key.get(key)?;
+        // A clock that has gone backwards produces no age at all, and that
+        // counts as stale: the safe reading of "I cannot tell how old this
+        // is" is to refuse the payment that needs it.
+        let stale = now
+            .as_millis()
+            .checked_sub(held.seen_at.as_millis())
+            .is_none_or(|age| age > self.ttl_ms);
         if stale {
             self.by_key.remove(key);
             return None;

@@ -121,10 +121,11 @@ fn parse_rfc3339_millis(s: &str) -> Option<i64> {
     }
 
     let tail = s.get(19..)?;
-    let (frac, zone) = match tail.find(['Z', 'z', '+']) {
-        Some(i) => (tail.get(..i)?, tail.get(i..)?),
-        None => return None,
-    };
+    // A timestamp with no zone marker at all is refused here, by the `?`:
+    // a mandate whose expiry depends on which timezone you read it in is
+    // not an expiry.
+    let zone_at = tail.find(['Z', 'z', '+'])?;
+    let (frac, zone) = (tail.get(..zone_at)?, tail.get(zone_at..)?);
     if !(zone.eq_ignore_ascii_case("z") || zone == "+00:00") {
         return None; // non-UTC offsets refused, see above
     }

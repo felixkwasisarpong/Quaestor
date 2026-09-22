@@ -47,6 +47,26 @@ jobs:
       - name: Playground is not stale
         run: python3 scripts/check_playground.py
 
+  # Non-blocking, and the point of it: the pinned job above is what gates a
+  # merge, and this one tells us a future compiler will complain *before*
+  # the upgrade commit lands. The alternative is what happened in September:
+  # nineteen days of red CI that local checks could not reproduce.
+  next-stable:
+    name: latest stable (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the newest stable, whatever it is
+        run: |
+          rm -f rust-toolchain.toml
+          rustup update stable && rustup default stable
+          rustup component add clippy
+          cargo --version && cargo clippy --version
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+        env:
+          RUSTFLAGS: -D warnings
+
   playground:
     name: wasm builds and answers
     runs-on: ubuntu-latest

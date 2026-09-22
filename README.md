@@ -4,6 +4,8 @@
 through Quaestor, which verifies the authorization behind it, enforces the
 budget, and signs a receipt for the decision — before a cent moves.
 
+[![ci](https://github.com/felixkwasisarpong/Quaestor/actions/workflows/ci.yml/badge.svg)](https://github.com/felixkwasisarpong/Quaestor/actions/workflows/ci.yml)
+
 **[Try it in your browser](https://felixkwasisarpong.github.io/Quaestor)** ·
 [Sixty seconds from a clone](#sixty-seconds) ·
 [Everything that has broken so far](BUGS.md)

@@ -570,6 +570,56 @@ fail is decoration.
 
 ---
 
+## 021 — CI was red for nineteen days and the local check said green
+
+**Day 27. Found by:** looking at the Actions tab for the first time since
+the first week, on the day before launch.
+
+The last green run was 1 September. Every run after it failed, and every one
+of them failed on the same step, and nobody noticed because
+`scripts/check.sh` printed "all green" every single time it was asked.
+
+The cause is two lines that look like they agree.
+
+`ci.yml` installs the toolchain with `rustup component add`, and
+`rust-toolchain.toml` said `channel = "stable"`. So the runner used whatever
+stable was current that morning. rustc 1.98 shipped on 1 September carrying
+a new `clippy::question_mark` lint. It fires on two `match` expressions in
+this repository, one in the RFC 3339 parser and one in the challenge store.
+The container the local checks ran in was still on 1.95, from March, where
+that lint does not exist.
+
+So both sides ran identical commands with identical flags against different
+compilers, and reported opposite results, truthfully.
+
+**Why this is the worst entry in this file.** `scripts/check.sh` exists
+*because of* an earlier version of exactly this, on day 1, where CI ran
+`cargo doc` and the local check did not. The fix then was to make the script
+run the same commands. The script's own comment claims it is "exactly what
+CI runs, in the same order, with the same flags" — and that was true, and
+was not enough, because the flags were never the variable. The toolchain was.
+
+A parity script that does not pin the compiler is a parity script about
+everything except the thing most likely to change underneath it.
+
+**Fix, in three parts:**
+
+- `rust-toolchain.toml` pins `1.98.1`. A compiler upgrade is now a commit
+  somebody reviewed rather than something that happens overnight.
+- `scripts/check.sh` prints `cargo --version` and `cargo clippy --version`
+  before it does anything else, so a mismatch is visible rather than
+  deduced from a contradiction later.
+- CI gained a non-blocking `latest stable (advisory)` job that deletes the
+  pin and runs clippy on whatever stable is newest. New lints now arrive as
+  a yellow warning weeks early instead of as a red build nobody can
+  reproduce.
+
+**And the honest part:** the fix for the lint took four minutes. The
+nineteen days came from trusting a green line in my own terminal over the
+one place that was telling me the truth, which I never opened.
+
+---
+
 ## Open questions
 
 - The nonce store in `quaestor-proxy` is `InMemoryNonceStore`, so a restart
