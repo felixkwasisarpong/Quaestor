@@ -19,6 +19,7 @@ chaos = ["dep:quaestor-chaos"]
 quaestor-chaos = { path = "../quaestor-chaos", optional = true }
 quaestor-core = { path = "../quaestor-core" }
 quaestor-policy = { path = "../quaestor-policy" }
+quaestor-verify = { path = "../quaestor-verify" }
 thiserror = { workspace = true }
 postgres = "0.19"
 

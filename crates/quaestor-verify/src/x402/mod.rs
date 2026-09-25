@@ -7,5 +7,6 @@ pub use types::{
     ExactEvmAuthorization, ExactEvmPayload, PaymentPayload, PaymentRequirements, SUPPORTED_VERSION,
 };
 pub use verify::{
-    verify_exact_evm, AssetRegistry, AssetSpec, InMemoryNonceStore, NonceStore, VerifiedPayment,
+    verify_exact_evm, AssetRegistry, AssetSpec, Freshness, InMemoryNonceStore, NonceStore,
+    NonceStoreUnavailable, VerifiedPayment,
 };

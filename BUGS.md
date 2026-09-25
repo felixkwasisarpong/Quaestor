@@ -620,15 +620,100 @@ one place that was telling me the truth, which I never opened.
 
 ---
 
+## 022 — The replay guard was the one part of the system that forgot
+
+**Day 28. Found by:** nobody. It had been sitting in this file, under "Open
+questions", for nine days, which is its own kind of finding.
+
+An x402 authorization is a bearer instrument. Anyone holding the signed
+payload can present it, and the only thing standing between one signature
+and two payments is a record that it has already been spent. The proxy kept
+that record in a `HashSet`. A restart emptied it.
+
+So the failure mode was not an attack. It was a deploy.
+
+**What made it survivable, and why that is not a defence.** A replay across
+a restart *was* refused, and the harness said so
+(`a_restart_must_not_make_a_spent_authorization_spendable_again` has been
+green since day 19). But it was refused by the wrong thing. Replacing the
+durable store with the old in-memory one and reading the body the proxy
+actually returns:
+
+```json
+{"error":"denied","detail":"malformed: this intent has already been settled",
+ "verdict":{"reasons":[{"code":"malformed_intent", ...}]}}
+```
+
+That is the ledger's unique index on `(principal, idempotency_key)`
+refusing a second *reservation*, and it only coincides with a replay guard
+because the idempotency key is derived from the authorization's nonce. It is
+genuine defence in depth and it is worth having. It is not a replay guard,
+it reports a replayed bearer instrument as a malformed intent, and it lives
+in the layer that reserves budget rather than the layer that verifies
+payments. The first person to add retention to the holds table — and
+somebody will, because a holds table that grows forever is not a table —
+would delete the last thing standing between one signature and two
+payments, and no test would have gone red.
+
+**Why the test did not catch it.** It asserted a status code. Any 403
+satisfied it, and there were two different guards capable of producing one.
+It now asserts on the reason, which is what makes it a test of the replay
+guard rather than a test that something, somewhere, said no.
+
+**Fix.** `PgNonceStore` in `quaestor-ledger`, one statement:
+
+```sql
+INSERT INTO payment_nonces (payer, nonce, valid_before_secs)
+VALUES ($1, $2, $3)
+ON CONFLICT (payer, nonce) DO NOTHING
+```
+
+The row count is the whole check. No value is read and then acted on, so
+there is no window between reading and acting — which is what the trait has
+demanded since day 6 and what the entry two bullets above this one in the
+open questions warned would be got wrong. Sixteen threads and a barrier
+confirm it: exactly one is told it is the first. Rewritten as a `SELECT`
+followed by an `INSERT`, nine of the sixteen are.
+
+**Three things fell out of it that were not the bug.**
+
+*The trait could not say "I don't know".* `check_and_record` returned
+`bool`, and a database that cannot answer is not the same as a database that
+answered no. Collapsing them reports an outage to the operator as a replay
+attack and to the agent as a permanent `403` rather than a `503` it should
+retry. It now returns `Result<Freshness, NonceStoreUnavailable>`, the
+gateway stops trying further payment requirements the moment the failure is
+ours rather than the payer's, and `VerifyError::is_infrastructure` keeps the
+two apart without anyone parsing a string.
+
+*`postgres::Error` renders as the string "db error".* Everything useful — the
+message, the SQLSTATE, the constraint that fired — is one level down in its
+source. The first version of the store called `to_string()` on it, so a
+missing table would have produced a `503` whose entire explanation was "db
+error". True, and worth nothing at three in the morning.
+
+*The crash harness depended on the bug.* `wipe_database` reset `holds` and
+`budget_accounts` and nothing else, because until now the nonce store lived
+in the proxy's memory and every `kill` wiped it for free. Making it durable
+turned the second run of the suite red: a case refused for replaying a nonce
+an earlier case had spent. A harness that relies on the system forgetting
+stops working the moment the system stops forgetting, and it is better to
+learn that from a red test than from a reviewer.
+
+**On the table growing.** A nonce record only has to outlive the
+authorization it belongs to. Past `validBefore` the verifier refuses the
+payload on the temporal check, which runs *before* the replay check is
+reached, so the row has stopped protecting anything. `prune` deletes exactly
+those rows. That argument has a premise, and the premise is now a test:
+`an_expired_payload_never_reaches_the_nonce_store` hands the verifier a
+store that errors if it is consulted at all and asserts an expired payload
+is refused without touching it. Move the replay check one step earlier in
+the pipeline and that test goes red, which is the point of writing it.
+
+---
+
 ## Open questions
 
-- The nonce store in `quaestor-proxy` is `InMemoryNonceStore`, so a restart
-  forgets every nonce it has seen. A replayed authorization survives this
-  only because the ledger's unique index on `(principal, idempotency_key)`
-  refuses the second reservation — defence in depth that happens to work,
-  not a designed guarantee. The harness asserts it
-  (`a_restart_must_not_make_a_spent_authorization_spendable_again`), and it
-  should not be the thing standing between a restart and a double payment.
 - `capture` is terminal and the ledger has no reversing entry. The proxy is
   built around that — it captures only once the upstream connection is up,
   so anything that fails earlier releases a hold that is still `held`. But an
@@ -645,10 +730,6 @@ one place that was telling me the truth, which I never opened.
   serialize in Postgres anyway, so the lock costs less than it looks like,
   but it also serializes *different* principals, which the database would
   not. First thing to revisit under real load.
-- `NonceStore::check_and_record` is documented as needing to be atomic. The
-  in-memory implementation is; the Postgres one is not written yet. If it
-  lands as a read followed by a write, two concurrent replays of the same
-  authorization can both be told they are the first.
 - Signature malleability is currently handled by `k256` rejecting high-S
   values. That is a dependency's behaviour, not our test. It deserves an
   explicit case.
@@ -656,5 +737,13 @@ one place that was telling me the truth, which I never opened.
   `currency_exponent` maps codes to decimals in Rust. The exponent is part of
   a currency's identity everywhere else in this system, so storing only half
   of it is a gap. It should be a column.
-- `NonceStore::check_and_record` is now the only remaining place with a
-  read-then-write shape. The holds path shows what the fix looks like.
+- Nothing calls `PgNonceStore::prune`. The method is tested and safe, and
+  the table still grows until an operator runs it. A sweep belongs somewhere,
+  and putting it on a timer inside the store was rejected on purpose: a
+  store that deletes rows on its own schedule is a store whose contents
+  depend on when you look, which is the opposite of auditable.
+- The proxy opens two Postgres connections, one for holds and one for
+  nonces, and neither is pooled. That is deliberate — a rolled-back
+  reservation must not roll back the record that an authorization was spent
+  — but "two connections, no pool" is a sentence that will need revisiting
+  before anyone runs this under load.

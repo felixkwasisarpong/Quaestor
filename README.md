@@ -68,7 +68,7 @@ resolves to `Deny` — never to `Allow`.
 | `quaestor-core` | ✅ `Money`, `PaymentIntent`, `Verdict`, typed ids |
 | `quaestor-verify` | ✅ x402 v2 `exact` on EVM; delegation chains with monotonic attenuation; AP2 scope mapping |
 | `quaestor-policy` | ✅ rule schema and deterministic evaluator; three verdicts |
-| `quaestor-ledger` | ✅ budget holds, concurrency-safe under real contention |
+| `quaestor-ledger` | ✅ budget holds, concurrency-safe under real contention; durable replay guard |
 | `quaestor-receipt` | ✅ signed, hash-chained receipts + offline verifier CLI |
 | `quaestor-proxy` | ✅ inline HTTP gateway; refused payments are not forwarded |
 | `quaestor-chaos` | ✅ crash injection at 8 points, with invariants checked after restart |
@@ -110,9 +110,9 @@ signatures were never the thing that caught it.
 ```bash
 ./scripts/check.sh   # exactly what CI runs: fmt, clippy, test, doc
 
-# The ledger's concurrency tests need a real Postgres. Without this they
-# skip rather than fail, because a green suite that proved nothing is worse
-# than a red one.
+# The ledger's concurrency and replay tests need a real Postgres. Without
+# this they skip rather than fail, because a green suite that proved nothing
+# is worse than a red one.
 QUAESTOR_TEST_PG="host=/tmp/pgsock port=5433 user=quaestor dbname=quaestor_test" \
   cargo test -p quaestor-ledger
 
@@ -138,9 +138,10 @@ quaestor-proxy --config examples/quaestor.toml
 http_proxy=http://127.0.0.1:8402 your-agent
 ```
 
-The example config sets `allow_volatile_ledger`, which keeps budgets in
-memory so you can try it without a database. It says so on startup, loudly,
-because a budget that a restart forgets is not a budget.
+The example config sets `allow_volatile_ledger`, which keeps budgets *and
+spent payment authorizations* in memory so you can try it without a
+database. It says so on startup, twice, loudly: a budget a restart forgets
+is not a budget, and a replay guard a restart forgets is not a guard.
 
 ```
 agent ──▶ GET /report ─────────────────────▶ origin

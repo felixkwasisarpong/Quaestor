@@ -395,8 +395,18 @@ async fn wipe_database(conn: &str) {
         let mut c = postgres::Client::connect(&conn, postgres::NoTls).expect("connect");
         c.batch_execute(quaestor_ledger::MIGRATION)
             .expect("migrate");
-        c.batch_execute("DELETE FROM holds; DELETE FROM budget_accounts;")
-            .expect("wipe");
+        // `payment_nonces` belongs here for a reason worth writing down.
+        // Until the nonce store was durable, the harness did not have to
+        // reset it: it lived in the proxy's memory and every `kill` wiped it
+        // for free. Making it survive a restart — which is the entire point
+        // — made this function's omission visible, as a run whose second
+        // case was refused for replaying a nonce the first case had spent.
+        // A harness that depends on the system forgetting is a harness that
+        // stops working the moment the system stops forgetting.
+        c.batch_execute(
+            "DELETE FROM holds; DELETE FROM budget_accounts; DELETE FROM payment_nonces;",
+        )
+        .expect("wipe");
     })
     .await
     .expect("wipe task");
@@ -623,5 +633,36 @@ async fn a_restart_must_not_make_a_spent_authorization_spendable_again() {
         "the same authorization was accepted a second time after a restart; \
          holds now: {}, origin paid {paid} times",
         holds.len()
+    );
+
+    // Two guards can produce this 403, and it matters which one did.
+    //
+    // The replay guard refuses the authorization outright. The ledger's
+    // unique index on `(principal, idempotency_key)` catches a second
+    // reservation under the same key and returns the *original* decision
+    // unchanged — which, for a payment that was allowed, is an allow. It is
+    // a real second line of defence against double-spending the budget, and
+    // it is not a replay guard.
+    //
+    // So this asserts on the reason and not only the code. A test satisfied
+    // by any 403 would have gone green for twenty-two days while the proxy
+    // forgot every nonce it had ever seen.
+    let body: serde_json::Value =
+        serde_json::from_slice(after_restart.body()).expect("the refusal is json");
+    let detail = body
+        .get("detail")
+        .and_then(|d| d.as_str())
+        .unwrap_or_default();
+    assert!(
+        detail.contains("seen before"),
+        "the refusal must come from the replay guard, not from whatever \
+         happened to say no first; got: {body}"
+    );
+
+    // And the origin was paid exactly once, which is the thing anybody
+    // actually cares about.
+    assert_eq!(
+        paid, 1,
+        "the origin was paid {paid} times for one signature"
     );
 }

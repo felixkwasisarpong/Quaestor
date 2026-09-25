@@ -445,3 +445,92 @@ fn emit_conformance_vectors() {
         "vectors have drifted; re-bless if intended"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The nonce store is a dependency, and a dependency can be absent or broken.
+// These cases are about what the verifier says then.
+
+/// A store that refuses to be consulted, and remembers that it was.
+///
+/// Two claims are being tested with it. First, that an authorization the
+/// temporal check has already refused never reaches the replay check at all
+/// — which is the premise
+/// `quaestor-ledger`'s `pruning_forgets_the_unusable_and_nothing_else`
+/// depends on, because deleting a nonce is only safe if nothing was ever
+/// going to ask about it. Second, that a store which cannot answer produces
+/// a refusal that says so.
+#[derive(Default)]
+struct PoisonNonceStore {
+    consulted: std::cell::Cell<usize>,
+}
+
+impl quaestor_verify::x402::NonceStore for PoisonNonceStore {
+    fn check_and_record(
+        &mut self,
+        _payer: &Address,
+        _nonce: &[u8; 32],
+        _valid_before_secs: u64,
+    ) -> Result<quaestor_verify::x402::Freshness, quaestor_verify::x402::NonceStoreUnavailable>
+    {
+        self.consulted.set(self.consulted.get() + 1);
+        Err(quaestor_verify::x402::NonceStoreUnavailable(
+            "connection refused".into(),
+        ))
+    }
+}
+
+#[test]
+fn an_expired_payload_never_reaches_the_nonce_store() {
+    // Half of the argument that pruning is safe. Past `validBefore` the
+    // temporal check refuses the payload on its own, so the record that its
+    // nonce was spent has stopped protecting anything and can be deleted.
+    // That reasoning is only sound if the replay check is genuinely
+    // unreachable for such a payload, and this is what makes it a fact
+    // rather than a reading of the source.
+    let mut nonces = PoisonNonceStore::default();
+    let p = signed_payload(|_| {});
+    let long_after = VALID_BEFORE + 1;
+
+    let err = verify_exact_evm(&p, &requirements(), &registry(), &mut nonces, long_after)
+        .expect_err("expired");
+    assert!(
+        matches!(err, VerifyError::Expired { .. }),
+        "expected Expired, got {err:?}"
+    );
+    assert_eq!(
+        nonces.consulted.get(),
+        0,
+        "an expired authorization must be refused before the replay check runs"
+    );
+}
+
+#[test]
+fn a_nonce_store_that_cannot_answer_is_not_reported_as_a_replay() {
+    let mut nonces = PoisonNonceStore::default();
+    let err = verify_exact_evm(
+        &signed_payload(|_| {}),
+        &requirements(),
+        &registry(),
+        &mut nonces,
+        NOW,
+    )
+    .expect_err("the store refused to answer");
+
+    assert_eq!(nonces.consulted.get(), 1, "a live payload does reach it");
+    match &err {
+        VerifyError::NonceStoreUnavailable { detail } => {
+            assert!(detail.contains("connection refused"), "{detail}");
+        }
+        other => panic!("expected NonceStoreUnavailable, got {other:?}"),
+    }
+
+    // The two refusals must stay distinguishable all the way out, because
+    // one of them means somebody is attacking you and the other means your
+    // database is down.
+    assert_ne!(err, VerifyError::NonceReplayed);
+    assert!(
+        err.is_infrastructure(),
+        "the caller needs to be able to tell this apart without parsing a string"
+    );
+    assert!(!VerifyError::NonceReplayed.is_infrastructure());
+}

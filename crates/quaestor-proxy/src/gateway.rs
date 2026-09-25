@@ -384,6 +384,16 @@ impl Gateway {
                     verified = Some(v);
                     break;
                 }
+                // A failure of our machinery ends the loop instead of
+                // advancing it. Trying the next requirement would ask the
+                // same unreachable store the same question, and the refusal
+                // the agent finally saw would be whichever alternative
+                // happened to be last in the list — a `403` saying its
+                // payment is invalid, when the truth is a `503` saying we
+                // cannot currently tell.
+                Err(e) if e.is_infrastructure() => {
+                    return refuse(RefusalKind::Unavailable, &e.to_string());
+                }
                 Err(e) => last_error = Some(e),
             }
         }

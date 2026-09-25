@@ -47,6 +47,60 @@ jobs:
       - name: Playground is not stale
         run: python3 scripts/check_playground.py
 
+  # The two most load-bearing test suites in this repository skip themselves
+  # unless `QUAESTOR_TEST_PG` points at a real database, and until now
+  # nothing in CI set it. So the green badge above has been attesting to the
+  # deterministic half of the work while the concurrency proof and the crash
+  # proof — the two things worth believing — ran only on my laptop, when I
+  # remembered. That is the same shape of mistake as BUGS.md #021: trusting
+  # a green that proved less than it looked like it proved.
+  database:
+    name: concurrency · replay (real Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: quaestor_test
+        ports: ['5432:5432']
+        # Without this the job races the container and fails on connect.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      QUAESTOR_TEST_PG: host=127.0.0.1 port=5432 user=postgres password=postgres dbname=quaestor_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-db-${{ hashFiles('**/Cargo.lock') }}
+
+      # Blocking. Deterministic, no subprocesses, no ports: sixteen threads
+      # against one index and a handful of transactions.
+      - name: Ledger, under contention and against replay
+        run: cargo test -p quaestor-ledger
+
+      # Advisory for now, and honestly rather than as a shrug. This one
+      # spawns the real binary, kills it with `abort` at eight points and
+      # restarts it; it has never run anywhere but my machine, so its
+      # behaviour on a shared runner is unknown. Making it blocking on its
+      # first day would mean a red badge for a timing difference rather than
+      # for a bug. It becomes blocking once it has a track record, and until
+      # then a failure here is still visible in the Actions tab.
+      - name: Crash injection against a real database (advisory)
+        continue-on-error: true
+        run: |
+          cargo test -p quaestor-proxy --features chaos --test crash \
+            -- --test-threads=1 --nocapture
+
   # Non-blocking, and the point of it: the pinned job above is what gates a
   # merge, and this one tells us a future compiler will complain *before*
   # the upgrade commit lands. The alternative is what happened in September:

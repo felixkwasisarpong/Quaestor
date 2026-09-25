@@ -24,7 +24,7 @@ use quaestor_proxy::{
     Caller, Config, Gateway, Identities, InMemoryHolds, JsonLinesSink, PostgresHolds, ReceiptSink,
 };
 use quaestor_verify::mandate::{Constraint, Scope};
-use quaestor_verify::x402::{AssetRegistry, AssetSpec, InMemoryNonceStore};
+use quaestor_verify::x402::{AssetRegistry, AssetSpec, InMemoryNonceStore, NonceStore};
 use serde::Deserialize;
 
 const USAGE: &str = "\
@@ -171,15 +171,9 @@ fn run() -> Result<(), String> {
     }
 
     let holds = open_ledger(file.allow_volatile_ledger)?;
+    let nonces = open_nonces(file.allow_volatile_ledger)?;
     let public_key = key.verifying_key().to_bytes();
-    let gateway = Gateway::new(
-        config,
-        identities,
-        holds,
-        Box::new(InMemoryNonceStore::default()),
-        key,
-        Box::new(sink),
-    );
+    let gateway = Gateway::new(config, identities, holds, nonces, key, Box::new(sink));
 
     let addr: std::net::SocketAddr = file
         .listen
@@ -238,6 +232,45 @@ fn open_ledger(allow_volatile: bool) -> Result<Box<dyn quaestor_proxy::Holds>, S
         _ => Err(
             "QUAESTOR_PG is not set. A budget that does not survive a restart is \
                   not a budget; set allow_volatile_ledger = true to proceed anyway."
+                .to_owned(),
+        ),
+    }
+}
+
+/// Where spent payment authorizations are remembered.
+///
+/// Governed by the same switch as the ledger, and for the same reason: an
+/// x402 authorization is a bearer instrument, so the only thing between one
+/// signature and two payments is a record that it has been used. A record
+/// kept in a process is a record a restart deletes, and a crash loop is then
+/// a replay window that reopens on every boot.
+///
+/// A second connection rather than the ledger's. The replay check runs
+/// during verification, before any hold exists and sometimes for a payment
+/// about to be refused for an unrelated reason; sharing the transaction that
+/// reserves budget would let a rolled-back reservation also roll back the
+/// record that the authorization was spent.
+fn open_nonces(allow_volatile: bool) -> Result<Box<dyn NonceStore + Send>, String> {
+    match std::env::var("QUAESTOR_PG") {
+        Ok(conn) if !conn.is_empty() => {
+            let client = postgres_client(&conn)?;
+            let mut store = quaestor_ledger::PgNonceStore::new(client);
+            store
+                .migrate()
+                .map_err(|e| format!("could not apply the nonce schema: {e}"))?;
+            Ok(Box::new(store))
+        }
+        _ if allow_volatile => {
+            eprintln!(
+                "warning: QUAESTOR_PG is not set, so spent payment authorizations are \
+                 forgotten on restart and can each be presented again. Do not run this \
+                 in front of real money."
+            );
+            Ok(Box::new(InMemoryNonceStore::default()))
+        }
+        _ => Err(
+            "QUAESTOR_PG is not set. A replay guard that does not survive a restart \
+                  is not a replay guard; set allow_volatile_ledger = true to proceed anyway."
                 .to_owned(),
         ),
     }

@@ -56,8 +56,20 @@
 
 pub(crate) mod chaos;
 pub mod holds;
+pub mod nonces;
 
 pub use holds::{HoldRecord, HoldState, LedgerError, Reservation, Store};
+pub use nonces::PgNonceStore;
 
 /// The schema this crate expects.
-pub const MIGRATION: &str = include_str!("../migrations/0001_holds.sql");
+///
+/// One string, applied in one `batch_execute`, so a deployment cannot end up
+/// with the holds tables and not the nonce table. Every statement in both
+/// files is idempotent, which is load-bearing rather than tidy: the proxy
+/// migrates on startup, so a migration that only succeeds once is a process
+/// that only starts once. See `BUGS.md` #018.
+pub const MIGRATION: &str = concat!(
+    include_str!("../migrations/0001_holds.sql"),
+    "\n",
+    include_str!("../migrations/0002_nonces.sql"),
+);

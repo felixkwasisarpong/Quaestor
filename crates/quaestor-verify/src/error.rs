@@ -53,6 +53,14 @@ pub enum VerifyError {
     // ---- replay ----
     #[error("nonce has been seen before")]
     NonceReplayed,
+    /// The replay check could not run. Not the same as failing it.
+    ///
+    /// Kept apart from [`VerifyError::NonceReplayed`] all the way to the
+    /// receipt, because the two demand opposite responses: one means somebody
+    /// is replaying authorizations at you, the other means your database is
+    /// down. Both refuse the payment. Only one of them is about the payment.
+    #[error("replay cannot be ruled out: {detail}")]
+    NonceStoreUnavailable { detail: String },
 
     // ---- configuration ----
     /// We were handed an asset we have no decimals for. Failing closed here
@@ -85,10 +93,26 @@ impl VerifyError {
                 detail: self.to_string(),
             },
 
+            VerifyError::NonceStoreUnavailable { detail } => DenyReason::StateUnavailable {
+                detail: detail.clone(),
+            },
+
             other => DenyReason::MalformedIntent {
                 detail: other.to_string(),
             },
         }
+    }
+
+    /// True when the refusal is about our machinery, not their payment.
+    ///
+    /// A caller trying several payment requirements in turn must stop at the
+    /// first of these rather than moving on to the next one: the next one
+    /// will fail in exactly the same way, and the error the caller finally
+    /// reports would be whichever alternative happened to be last in the
+    /// list. That reads as "your payment is invalid" when the truth is "we
+    /// cannot tell right now", and the two want different people woken up.
+    pub fn is_infrastructure(&self) -> bool {
+        matches!(self, VerifyError::NonceStoreUnavailable { .. })
     }
 }
 
@@ -135,6 +159,29 @@ mod tests {
             }
             other => panic!("expected ScopeWidened, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn an_outage_and_a_replay_do_not_collapse_to_the_same_verdict() {
+        // A replay is the payer's problem and is final. An unreachable store
+        // is our problem and is temporary. They refuse the same payment and
+        // they mean opposite things, so the receipt has to be able to tell
+        // an auditor which one happened.
+        let outage = VerifyError::NonceStoreUnavailable {
+            detail: "connection refused".into(),
+        };
+        match outage.to_deny_reason() {
+            DenyReason::StateUnavailable { detail } => {
+                assert!(detail.contains("connection refused"), "{detail}");
+            }
+            other => panic!("expected StateUnavailable, got {other:?}"),
+        }
+        assert_ne!(
+            outage.to_deny_reason(),
+            VerifyError::NonceReplayed.to_deny_reason()
+        );
+        assert!(outage.is_infrastructure());
+        assert!(!VerifyError::NonceReplayed.is_infrastructure());
     }
 
     #[test]

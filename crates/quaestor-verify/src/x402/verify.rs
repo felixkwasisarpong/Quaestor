@@ -88,6 +88,31 @@ impl AssetRegistry {
     }
 }
 
+/// What the store knew about a nonce.
+///
+/// An enum and not a `bool` because the two readings of `false` — "I have
+/// seen this" and "I could not tell" — are the whole point, and a boolean
+/// has nowhere to put the difference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Freshness {
+    /// Never seen. The payment may proceed, and the nonce is now recorded.
+    Fresh,
+    /// Seen before. Refuse.
+    Replayed,
+}
+
+/// The store could not answer.
+///
+/// Deliberately not folded into [`Freshness::Replayed`]. A database that is
+/// unreachable has not told us this payment is a replay; it has told us
+/// nothing. Both outcomes refuse the payment, so the payer sees the same
+/// result either way, but the operator does not: one is an attack and the
+/// other is an outage, and a system that reports the outage as an attack
+/// sends somebody hunting for an attacker who does not exist.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("the nonce store could not answer: {0}")]
+pub struct NonceStoreUnavailable(pub String);
+
 /// Somewhere to remember which nonces have been used.
 ///
 /// A trait rather than a concrete store because the durable implementation
@@ -97,20 +122,44 @@ impl AssetRegistry {
 /// can both be told they are the first.
 pub trait NonceStore {
     /// Record the nonce and report whether it was previously unseen.
-    /// `true` means "this is new, proceed".
-    fn check_and_record(&mut self, payer: &Address, nonce: &[u8; 32]) -> bool;
+    ///
+    /// `valid_before_secs` is the instant after which this authorization can
+    /// never be accepted again, and it is passed in so a durable store can
+    /// eventually forget the nonce without reopening the replay window: once
+    /// the temporal check refuses the authorization on its own, remembering
+    /// its nonce proves nothing. A store that ignores the argument is still
+    /// correct, only larger.
+    fn check_and_record(
+        &mut self,
+        payer: &Address,
+        nonce: &[u8; 32],
+        valid_before_secs: u64,
+    ) -> Result<Freshness, NonceStoreUnavailable>;
 }
 
 /// In-memory store. Fine for tests and a single process; not durable, so not
 /// fine for anything that restarts.
+///
+/// The name is the warning. This was the proxy's default for twenty-two
+/// days, which meant a restart forgot every nonce it had ever seen — see
+/// `BUGS.md` #022.
 #[derive(Debug, Default)]
 pub struct InMemoryNonceStore {
     seen: std::collections::HashSet<([u8; 20], [u8; 32])>,
 }
 
 impl NonceStore for InMemoryNonceStore {
-    fn check_and_record(&mut self, payer: &Address, nonce: &[u8; 32]) -> bool {
-        self.seen.insert((*payer, *nonce))
+    fn check_and_record(
+        &mut self,
+        payer: &Address,
+        nonce: &[u8; 32],
+        _valid_before_secs: u64,
+    ) -> Result<Freshness, NonceStoreUnavailable> {
+        Ok(if self.seen.insert((*payer, *nonce)) {
+            Freshness::Fresh
+        } else {
+            Freshness::Replayed
+        })
     }
 }
 
@@ -234,8 +283,18 @@ pub fn verify_exact_evm(
     // 7. Replay. Last, because it mutates: a payload that fails any earlier
     //    check must not burn a nonce, or an attacker can grief a payer by
     //    replaying garbage.
-    if !nonces.check_and_record(&from, &nonce) {
-        return Err(VerifyError::NonceReplayed);
+    //
+    //    The nonce is burned here, before the hold is reserved and before
+    //    anything is captured. That is the safe direction: a crash between
+    //    this line and the capture leaves an authorization that can never be
+    //    used again, which costs the payer one re-signature, whereas the
+    //    other ordering costs them the payment twice.
+    match nonces.check_and_record(&from, &nonce, valid_before) {
+        Ok(Freshness::Fresh) => {}
+        Ok(Freshness::Replayed) => return Err(VerifyError::NonceReplayed),
+        Err(NonceStoreUnavailable(detail)) => {
+            return Err(VerifyError::NonceStoreUnavailable { detail })
+        }
     }
 
     // x402 amounts are unsigned; `Money` is signed, because refunds exist.
